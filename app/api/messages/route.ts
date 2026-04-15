@@ -35,8 +35,9 @@ export async function POST(req: Request) {
         await tagEscalated(conversation.id)
       }
 
-      await saveMessage(conversation.id, "assistant", result.response)
-      await logResponse(creatorId, message, result.response, result.intent === "ESCALATE")
+      const reply = result.response || "I'm connecting you with the team right away — someone will follow up shortly."
+      await saveMessage(conversation.id, "assistant", reply)
+      await logResponse(creatorId, message, reply, result.intent === "ESCALATE")
     } catch (err) {
       console.error("[bot] processing failed:", err)
     }

@@ -76,11 +76,12 @@ function createBot(): Chat {
       }
 
       // 7. Reply in DM
-      await thread.post(result.response)
+      const reply = result.response || "I'm connecting you with the team right away — someone will follow up shortly."
+      await thread.post(reply)
 
       // 8. Persist bot reply + log
-      await saveMessage(dbConversation.id, "assistant", result.response)
-      await logResponse(creator.id, userText, result.response, result.intent === "ESCALATE")
+      await saveMessage(dbConversation.id, "assistant", reply)
+      await logResponse(creator.id, userText, reply, result.intent === "ESCALATE")
     } catch (err) {
       console.error("[slack-bot] pipeline failed:", err)
       await thread.post(
