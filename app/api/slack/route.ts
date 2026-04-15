@@ -1,6 +1,8 @@
 import { after } from "next/server"
 import { getBot } from "@/lib/bot/slack-bot"
 
+export const maxDuration = 30
+
 /**
  * POST /api/slack
  *
@@ -16,6 +18,13 @@ import { getBot } from "@/lib/bot/slack-bot"
  * Slack requires a 200 within 3s, LLM calls take 2-8s.
  */
 export async function POST(request: Request): Promise<Response> {
+  // Handle url_verification challenge before initializing the bot
+  // so Slack can verify the endpoint without triggering a cold-start timeout
+  const body = await request.clone().json().catch(() => null)
+  if (body?.type === "url_verification") {
+    return Response.json({ challenge: body.challenge })
+  }
+
   const bot = getBot()
   return bot.webhooks.slack(request, {
     waitUntil: (promise) => after(() => promise),
