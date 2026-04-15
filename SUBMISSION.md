@@ -88,10 +88,36 @@ Null fields are passed as-is (e.g. `Pay: NOT SET — pay rate has not been confi
 
 ### Hallucination prevention
 
-- Tool use is forced (`tool_choice: { type: "function", name: "support_response" }`) — the model cannot free-text respond
-- The system prompt explicitly says: "Only use the data provided above. Never fabricate or estimate."
-- Null fields trigger escalation rather than guessing
-- The fallback path (no tool call returned) defaults to ESCALATE, not a fabricated answer
+The assignment requires: *"The bot should never fabricate data — if a field is null or missing, acknowledge it and escalate."* We enforce this at four layers:
+
+**1. Forced tool use — model cannot free-text respond**
+```ts
+tool_choice: { type: "function", function: { name: "support_response" } }
+```
+The model must return `{ intent, response }`. It cannot hallucinate outside that structure.
+
+**2. Null fields injected as-is**
+```ts
+- Pay: ${payInfo ?? "NOT SET — pay rate has not been configured yet"}
+```
+If `pay_rate` is null in the DB, the prompt says `NOT SET`. The model sees exactly what's in the DB — nothing more, nothing invented.
+
+**3. Explicit escalation rule for null fields**
+```
+ALWAYS set intent = ESCALATE when:
+- Pay field shows "NOT SET" and creator asks anything about pay — escalate immediately
+- ANY required data field is NULL or missing — escalate immediately, do not explain or offer
+```
+
+**4. Safe fallback if no tool call returned**
+```ts
+if (!toolCall) {
+  return { intent: "ESCALATE", response: "I'll connect you with support right away." }
+}
+```
+If OpenAI returns no tool call at all — defaults to ESCALATE, never a guess.
+
+**Verified with live test** — ran T4 with `pay_rate = null` and asked "How much do I get paid?" — bot escalated immediately, never guessed a number.
 
 ### Example prompt → response pairs
 
