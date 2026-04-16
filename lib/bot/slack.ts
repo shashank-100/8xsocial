@@ -6,38 +6,49 @@ export interface SlackAlertContext {
   conversationId: string
 }
 
-export function formatPayInfo(payRate: number | null, payStructure: string | null): string | null {
-  if (!payRate) return null
-  return `$${payRate} ${payStructure === "per_video" ? "per video" : "per month"}`
-}
-
+// Returns the Slack message ts (used as thread_ts for replies)
 export async function sendSlackAlert(
   creatorId: string,
   message: string,
   ctx: SlackAlertContext
-): Promise<void> {
-  if (!process.env.SLACK_WEBHOOK_URL) {
-    console.warn("[slack] SLACK_WEBHOOK_URL not set — skipping alert")
-    return
+): Promise<string | null> {
+  const botToken = process.env.SLACK_BOT_TOKEN?.trim()
+  const channelId = process.env.SLACK_CHANNEL_ID?.trim()
+
+  if (!botToken || !channelId) {
+    console.warn("[slack] SLACK_BOT_TOKEN or SLACK_CHANNEL_ID not set — skipping alert")
+    return null
   }
 
   const name = ctx.creatorName ?? creatorId
-  const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? "https://yourapp.com"
 
-  await fetch(process.env.SLACK_WEBHOOK_URL, {
+  const res = await fetch("https://slack.com/api/chat.postMessage", {
     method: "POST",
-    headers: { "content-type": "application/json" },
+    headers: {
+      "content-type": "application/json; charset=utf-8",
+      Authorization: `Bearer ${botToken}`,
+    },
     body: JSON.stringify({
+      channel: channelId,
       text: [
-        `🚨 *Escalation — ${name} needs human support*`,
+        `:rotating_light: *Escalation — ${name} needs human support*`,
         `*Campaign:* ${ctx.campaignName}`,
         `*Message:* "${message}"`,
         ``,
         `*Creator snapshot:*`,
         `• Pay: ${ctx.payInfo ?? "not set"} | Bank connected: ${ctx.bankConnected ? "yes" : "no"}`,
         ``,
-        `→ <${appUrl}/conversations/${ctx.conversationId}|Open conversation>`,
+        `↩ *Reply in this thread* — your reply will appear in the creator's chat`,
       ].join("\n"),
     }),
   })
+
+  const data = await res.json()
+  if (!data.ok) {
+    console.error("[slack] chat.postMessage failed:", data.error)
+    return null
+  }
+
+  // ts is the message timestamp — used as thread_ts for replies
+  return data.ts as string
 }

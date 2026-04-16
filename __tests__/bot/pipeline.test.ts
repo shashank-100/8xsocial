@@ -13,10 +13,13 @@ vi.mock("@/lib/bot/conversation", () => ({
   saveMessage: vi.fn(),
   tagEscalated: vi.fn(),
   getMessages: vi.fn(),
+  getHistory: vi.fn().mockResolvedValue([]),
+  findConversationBySlackThread: vi.fn(),
+  pinCampaign: vi.fn(),
 }))
 vi.mock("@/lib/bot/context", () => ({ getContext: vi.fn() }))
 vi.mock("@/lib/bot/llm",     () => ({ callLLM: vi.fn() }))
-vi.mock("@/lib/bot/slack",   () => ({ sendSlackAlert: vi.fn() }))
+vi.mock("@/lib/bot/slack",   () => ({ sendSlackAlert: vi.fn().mockResolvedValue("1234567890.123456") }))
 vi.mock("@/lib/bot/log",     () => ({ logResponse: vi.fn() }))
 
 import { POST, GET } from "@/app/api/messages/route"
@@ -65,7 +68,7 @@ beforeEach(() => {
   vi.clearAllMocks()
   vi.mocked(findOrCreateConversation).mockResolvedValue(mockConversation)
   vi.mocked(saveMessage).mockResolvedValue(mockMessage)
-  vi.mocked(getContext).mockResolvedValue(mockContext)
+  vi.mocked(getContext).mockResolvedValue({ ...mockContext, campaigns: null })
 })
 
 describe("POST /api/messages", () => {
@@ -109,7 +112,7 @@ describe("POST /api/messages", () => {
       campaignName: mockContext.campaign.brand_name,
       conversationId: CONVERSATION_ID,
     }))
-    expect(tagEscalated).toHaveBeenCalledWith(CONVERSATION_ID)
+    expect(tagEscalated).toHaveBeenCalledWith(CONVERSATION_ID, expect.anything())
     expect(saveMessage).toHaveBeenCalledWith(CONVERSATION_ID, "assistant", "I'll connect you with support.")
     expect(logResponse).toHaveBeenCalledWith(CREATOR_ID, "I haven't been paid", "I'll connect you with support.", true)
   })
@@ -118,6 +121,7 @@ describe("POST /api/messages", () => {
     vi.mocked(getContext).mockResolvedValue({
       ...mockContext,
       creator: { ...mockContext.creator, pay_rate: null },
+      campaigns: null,
     })
     vi.mocked(callLLM).mockResolvedValue({ intent: "DATA", response: "I'll connect you with support." })
 

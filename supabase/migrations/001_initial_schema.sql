@@ -22,7 +22,6 @@ CREATE TABLE IF NOT EXISTS creators (
   name                TEXT,
   email               TEXT UNIQUE NOT NULL,
   campaign_id         UUID REFERENCES campaigns(id),
-  slack_user_id       TEXT UNIQUE,                          -- Slack user ID for DM bot lookup
   pay_rate            INTEGER,                               -- dollars
   pay_structure       TEXT CHECK (pay_structure IN ('per_video', 'monthly')),
   contract_signed     BOOLEAN NOT NULL DEFAULT false,
@@ -35,10 +34,6 @@ CREATE TABLE IF NOT EXISTS creators (
   last_posted_at      TIMESTAMPTZ,
   created_at          TIMESTAMPTZ NOT NULL DEFAULT now()
 );
-
-CREATE INDEX IF NOT EXISTS idx_creators_slack_user_id
-  ON creators (slack_user_id)
-  WHERE slack_user_id IS NOT NULL;
 
 CREATE INDEX IF NOT EXISTS idx_creators_campaign_id
   ON creators (campaign_id);

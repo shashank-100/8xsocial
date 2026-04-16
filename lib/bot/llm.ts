@@ -90,7 +90,8 @@ function buildSystemPrompt(creator: Creator, campaign: Campaign): string {
 
 export async function callLLM(
   context: { creator: Creator; campaign: Campaign },
-  message: string
+  message: string,
+  history: { role: "user" | "assistant"; content: string }[] = []
 ): Promise<BotResult> {
   const { creator, campaign } = context
 
@@ -107,6 +108,7 @@ export async function callLLM(
       max_completion_tokens: 1024,
       messages: [
         { role: "system", content: systemPrompt },
+        ...history,
         { role: "user", content: message },
       ],
       tools: [
