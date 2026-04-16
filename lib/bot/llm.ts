@@ -103,7 +103,7 @@ export async function callLLM(
       "content-type": "application/json",
     },
     body: JSON.stringify({
-      model: "gpt-5-mini-2025-08-07",
+      model: "gpt-5.4-mini",
       max_completion_tokens: 1024,
       messages: [
         { role: "system", content: systemPrompt },

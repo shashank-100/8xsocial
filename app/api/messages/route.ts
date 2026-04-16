@@ -2,7 +2,7 @@ import { after } from "next/server"
 import { findOrCreateConversation, saveMessage, tagEscalated, getMessages } from "@/lib/bot/conversation"
 import { getContext } from "@/lib/bot/context"
 import { callLLM } from "@/lib/bot/llm"
-import { sendSlackAlert } from "@/lib/bot/slack"
+import { sendSlackAlert, formatPayInfo } from "@/lib/bot/slack"
 import { logResponse } from "@/lib/bot/log"
 
 // POST /api/messages — store user message, trigger bot async
@@ -22,9 +22,7 @@ export async function POST(req: Request) {
       const result = await callLLM(context, message)
 
       if (result.intent === "ESCALATE") {
-        const payInfo = context.creator.pay_rate
-          ? `$${context.creator.pay_rate} ${context.creator.pay_structure === "per_video" ? "per video" : "per month"}`
-          : null
+        const payInfo = formatPayInfo(context.creator.pay_rate, context.creator.pay_structure)
         await sendSlackAlert(creatorId, message, {
           creatorName: context.creator.name,
           campaignName: context.campaign.brand_name,

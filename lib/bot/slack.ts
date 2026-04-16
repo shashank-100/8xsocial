@@ -1,9 +1,14 @@
-interface SlackAlertContext {
+export interface SlackAlertContext {
   creatorName: string | null
   campaignName: string
   payInfo: string | null
   bankConnected: boolean
   conversationId: string
+}
+
+export function formatPayInfo(payRate: number | null, payStructure: string | null): string | null {
+  if (!payRate) return null
+  return `$${payRate} ${payStructure === "per_video" ? "per video" : "per month"}`
 }
 
 export async function sendSlackAlert(
