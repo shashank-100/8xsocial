@@ -37,6 +37,15 @@ export async function POST(req: Request) {
   const event = payload.event
   if (!event) return Response.json({ ok: true })
 
+  console.log("[slack] event received:", JSON.stringify({
+    type: event.type,
+    bot_id: event.bot_id,
+    subtype: event.subtype,
+    thread_ts: event.thread_ts,
+    ts: event.ts,
+    text: event.text,
+  }))
+
   // Filter out everything except real human messages in threads
   if (
     event.type !== "message" ||   // not a message event
@@ -45,15 +54,18 @@ export async function POST(req: Request) {
     !event.thread_ts ||           // not in a thread
     event.thread_ts === event.ts  // is the parent message, not a reply
   ) {
+    console.log("[slack] event filtered out")
     return Response.json({ ok: true })
   }
 
   // Look up which conversation this Slack thread belongs to
   const conversation = await findConversationBySlackThread(event.thread_ts)
+  console.log("[slack] conversation lookup:", conversation?.id ?? "NOT FOUND", "thread_ts:", event.thread_ts)
   if (!conversation) return Response.json({ ok: true })
 
   // Save as "human" — distinct from "assistant" (bot) and "user" (creator)
   await saveMessage(conversation.id, "human", event.text)
+  console.log("[slack] saved human message to conversation:", conversation.id)
 
   return Response.json({ ok: true })
 }

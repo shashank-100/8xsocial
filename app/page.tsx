@@ -19,19 +19,25 @@ function ChatWidget() {
   const [conversationId, setConversationId] = useState<string | null>(null)
   const bottomRef = useRef<HTMLDivElement>(null)
   const prevCountRef = useRef(0)
+  const esRef = useRef<EventSource | null>(null)
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" })
   }, [messages, loading, open])
 
-  // Persistent poll — tied to conversationId lifecycle, not message send
+  // SSE stream — tied to conversationId lifecycle, replaces polling
   useEffect(() => {
     if (!conversationId) return
 
-    async function fetchMessages() {
+    // Close any existing connection before opening a new one
+    esRef.current?.close()
+
+    const es = new EventSource(`/api/messages/stream?conversationId=${conversationId}`)
+    esRef.current = es
+
+    es.onmessage = (e) => {
       try {
-        const res = await fetch(`/api/messages?conversationId=${conversationId}`)
-        const data = await res.json()
+        const data = JSON.parse(e.data)
         const dbMsgs = (data.messages ?? []) as { role: string; content: string }[]
         const visible = dbMsgs.filter(
           (m) => m.role === "user" || m.role === "assistant" || m.role === "human"
@@ -51,13 +57,14 @@ function ChatWidget() {
           prevCountRef.current = visible.length
         }
       } catch {
-        // ignore transient fetch errors
+        // ignore parse errors
       }
     }
 
-    fetchMessages()
-    const interval = setInterval(fetchMessages, 2000)
-    return () => clearInterval(interval)
+    return () => {
+      es.close()
+      esRef.current = null
+    }
   }, [conversationId])
 
   async function sendMessage() {

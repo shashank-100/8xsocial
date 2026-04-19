@@ -22,7 +22,7 @@ vi.mock("@/lib/bot/llm",     () => ({ callLLM: vi.fn() }))
 vi.mock("@/lib/bot/slack",   () => ({ sendSlackAlert: vi.fn().mockResolvedValue("1234567890.123456") }))
 vi.mock("@/lib/bot/log",     () => ({ logResponse: vi.fn() }))
 
-import { POST, GET } from "@/app/api/messages/route"
+import { POST } from "@/app/api/messages/route"
 import { findOrCreateConversation, saveMessage, tagEscalated } from "@/lib/bot/conversation"
 import { getContext } from "@/lib/bot/context"
 import { callLLM } from "@/lib/bot/llm"
