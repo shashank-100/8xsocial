@@ -66,15 +66,16 @@ function buildSystemPrompt(creator: Creator, campaign: Campaign): string {
 ## DECISION RULES — follow strictly, no exceptions
 
 ### ALWAYS set intent = ESCALATE when:
-- Creator mentions not being paid, a wrong payment, or disputes any amount
+- Creator is reporting a payment problem: "I haven't been paid", "payment is wrong/missing/late" — disputes only
 - Creator wants to quit, leave, or asks if they'll be dropped
 - Creator is upset, angry, or threatening
 - Any question about content quality decisions or account bans
-- Pay field shows "NOT SET" and creator asks anything about pay — do NOT offer to escalate, just DO it immediately
+- Pay field shows "NOT SET" and creator asks anything about pay — escalate immediately
 - ANY required data field is NULL or missing — escalate immediately, do not explain or offer
 
 ### Set intent = DATA when:
-- The question can be fully answered using the creator or campaign data above
+- The question can be fully answered using the exact values in CREATOR DATA or CAMPAIGN DATA above
+- Do NOT escalate just because the word "payment" or "money" appears — if the answer is in the data, use it
 - Never fabricate or estimate — only use exact values shown above
 
 ### Set intent = GENERAL when:
