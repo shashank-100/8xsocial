@@ -58,16 +58,20 @@ export async function dispatchInApp({
   const template = templates[eventType]
   if (!template) return
 
+  const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+  const safeEntityId = entityId && UUID_RE.test(entityId) ? entityId : null
+
   try {
-    await supabaseAdmin.from("inbox_items").insert({
+    const { error: insertError } = await supabaseAdmin.from("inbox_items").insert({
       creator_id: creatorId,
       type: "system",
       thread_id: threadId ?? null,
       preview: template.preview(ctx),
       entity_type: entityType ?? null,
-      entity_id: entityId ?? null,
+      entity_id: safeEntityId,
       metadata: { idempotency_key: key, event_type: eventType, source_id: sourceId },
     })
+    if (insertError) throw new Error(insertError.message)
     await markDispatched(key)
   } catch (err) {
     await markFailed(key)
