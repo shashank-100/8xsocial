@@ -30,9 +30,9 @@ Every surface — automated event messages, bot support replies, human chat — 
 └──────────────────────────┬──────────────────────────────────────────────┘
                            │  POST /api/events  (shared secret)
                            ▼
-                    ┌─────────────┐
-                    │   Inngest   │  fan-out, idempotency, retry, scheduling
-                    └──────┬──────┘
+               ┌──────────────────────────┐
+               │  BullMQ Worker (Railway) │  fan-out, idempotency, retry
+               └───────────┬──────────────┘
                            │
           ┌────────────────┼────────────────────┐
           ▼                ▼                    ▼
@@ -73,8 +73,8 @@ Every surface — automated event messages, bot support replies, human chat — 
 
 | Component | Runtime | Why |
 |-----------|---------|-----|
-| `POST /api/events` | Vercel Route Handler | Receives domain events, enqueues to Inngest, returns 200 immediately |
-| Inngest workers | Inngest cloud (called from Vercel) | Fan-out, retries, concurrency limits, idempotency — can't do this in a cron |
+| `POST /api/events` | Vercel Route Handler | Receives domain events, enqueues to Redis via BullMQ, returns 200 immediately |
+| BullMQ worker | Railway (always-on process) | Fan-out, retries, concurrency 50, idempotency — no Vercel timeout risk |
 | `POST /api/messages` | Vercel Route Handler + `after()` | Returns 202 instantly; bot runs after response via `next/server after()` |
 | `GET /api/messages/stream` | Vercel (SSE, Node runtime) | Polling SSE for bot chat — simple, no auth complexity |
 | Supabase DB | Supabase PostgreSQL | `inbox_items`, `conversations`, `messages`, `message_dispatch` |
@@ -85,13 +85,13 @@ Every surface — automated event messages, bot support replies, human chat — 
 
 Three places where things can silently fail:
 
-1. **Inngest worker failures** — Inngest dashboard shows failed runs with full stack traces. PagerDuty webhook on Inngest's failure webhook (`POST /api/inngest/alerts`) fires for any function that exhausts retries. `payment.sent` failures page on-call immediately; `warmup.reminder` failures go to Slack only.
+1. **BullMQ worker failures** — Railway logs show failed jobs with full stack traces. BullMQ's `worker.on("failed")` hook fires for every exhausted retry — `payment.sent` failures post to Slack immediately; `warmup.reminder` failures log only.
 
-2. **Resend/Twilio errors** — `dispatchEmail` and `dispatchSms` catch errors and call `markFailed(key)`. A daily Inngest cron queries `SELECT COUNT(*) FROM message_dispatch WHERE status = 'failed' AND created_at > now() - interval '24h'` and posts to Slack if >1% of dispatches are failing.
+2. **Resend/Twilio errors** — `dispatchEmail` and `dispatchSms` catch errors and call `markFailed(key)`. A daily cron queries `SELECT COUNT(*) FROM message_dispatch WHERE status = 'failed' AND created_at > now() - interval '24h'` and posts to Slack if >1% of dispatches are failing.
 
 3. **Bot LLM errors** — any exception in `callLLM` forces ESCALATE (fail safe). `lib/bot/log.ts` records `error: true` on the response log row. If error rate >5% in a 10-minute window, alert fires via the same daily cron.
 
-No custom infra needed — Inngest dashboard + two SQL queries cover the critical paths.
+Railway logs + two SQL queries cover the critical paths.
 
 ### The System Boundary
 
@@ -111,10 +111,10 @@ Everything else (payments, campaigns, posts, warmup) emits events by calling `PO
      { type: "payment.sent", paymentId: "pay_123", creatorId: "...", amount: 24000, videoCount: 3 }
 
 2. Route handler validates shared secret, calls:
-   inngest.send({ name: "event/payment.sent", data: { paymentId, creatorId, amount, videoCount } })
+   getEventQueue().add("event/payment.sent", { paymentId, creatorId, amount, videoCount })
    → returns 200 immediately
 
-3. Inngest worker: event/dispatch
+3. BullMQ worker: event/dispatch
    a. Idempotency check (see below)
    b. Fetch creator (name, email, locale, quiet_hours)
    c. Render template → subject + body
@@ -127,7 +127,7 @@ Everything else (payments, campaigns, posts, warmup) emits events by calling `PO
 ### Idempotency — How payment.sent Never Double-Sends
 
 The single most important guarantee. Two failure modes to prevent:
-1. **Retry storms:** Inngest retries a failed step — email fires twice
+1. **Retry storms:** BullMQ retries a failed job — email fires twice
 2. **Redeploys mid-flight:** Worker crashes after email sends but before marking done
 
 ```sql
@@ -141,10 +141,10 @@ CREATE TABLE message_dispatch (
 );
 ```
 
-**Inngest worker logic per channel:**
+**BullMQ worker logic per channel:**
 
 ```ts
-// Inside Inngest step for email channel:
+// Inside BullMQ processJob for email channel:
 const key = `payment.sent:${paymentId}:email`
 
 const { data: existing } = await supabase
@@ -164,7 +164,7 @@ await supabase
   .eq('idempotency_key', key)
 ```
 
-If the worker crashes after `resend.emails.send` but before the UPDATE, Inngest retries. The retry hits `ON CONFLICT DO NOTHING`, gets no row back, and skips. The email does NOT fire again.
+If the worker crashes after `resend.emails.send` but before the UPDATE, BullMQ retries. The retry hits `ON CONFLICT DO NOTHING`, gets no row back, and skips. The email does NOT fire again.
 
 The `in-app` channel uses the same key (`payment.sent:pay_123:in-app`) and `inbox_items` has its own unique constraint on `(creator_id, idempotency_key)`.
 
@@ -176,55 +176,33 @@ The naive approach — emit one event per creator and let them all land simultan
 
 ```ts
 // Single event emitted when campaign ends
-inngest.send({
-  name: "event/campaign.ended",
-  data: { campaignId: "camp_456", reason: "budget_exhausted" }
+getEventQueue().add("event/campaign.ended", {
+  campaignId: "camp_456", reason: "budget_exhausted"
 })
 
-// Inngest worker
-export const onCampaignEnded = inngest.createFunction(
-  { id: "campaign-ended-fanout", concurrency: { limit: 5 } },
-  { event: "event/campaign.ended" },
-  async ({ event, step }) => {
-    const { campaignId } = event.data
+// BullMQ worker — case "event/campaign.ended"
+const creatorIds = await fetchAllCreatorIds(campaignId) // one Supabase query
 
-    // Page through creators — never load all 10k into memory
-    let offset = 0
-    const PAGE = 500
-
-    while (true) {
-      const creators = await step.run(`fetch-page-${offset}`, () =>
-        fetchDroppedCreators(campaignId, offset, PAGE)
-      )
-      if (creators.length === 0) break
-
-      // In-app: single bulk INSERT (500 rows, one round-trip)
-      await step.run(`inbox-insert-${offset}`, () =>
-        bulkInsertInboxItems(creators, campaignId)
-      )
-
-      // Email: Resend batch API (max 100/request, respects rate limits)
-      for (let i = 0; i < creators.length; i += 100) {
-        await step.run(`email-batch-${offset}-${i}`, () =>
-          resend.batch.send(creators.slice(i, i + 100).map(renderDropEmail))
-        )
-        // Resend rate limit: 10 req/s — Inngest step sleep handles backpressure
-        await step.sleep(`rate-limit-${offset}-${i}`, "100ms")
-      }
-
-      offset += PAGE
-    }
-  }
+// addBulk = single Redis pipeline — safe for 10k+
+await getEventQueue().addBulk(
+  creatorIds.map(creatorId => ({
+    name: "event/creator.dropped",
+    data: { creatorId, campaignId, brandName },
+  }))
 )
+
+// Each creator.dropped job then runs independently:
+// - fetchCreator() → dispatchInApp() → dispatchEmail()
 ```
 
 **Why this works under load:**
-- `step.run` checkpoints are durable — if a step fails mid-fanout, Inngest resumes from the last checkpoint, not from zero
-- Each step is independently idempotent via its string key
-- Concurrency limit of 5 on the worker prevents 20 simultaneous campaign-end events from each spawning 10k email calls
+- `addBulk()` pushes all 10k jobs to Redis in one pipeline — O(1) round trips regardless of count
+- Each `creator.dropped` job is independently idempotent via `message_dispatch`
+- BullMQ concurrency 50 per worker — add Railway replicas to scale horizontally, zero code changes
+- Jobs persist in Redis through worker restarts — nothing lost on crash
 
-**Edge case: what if `step.run('fetch-page-0')` succeeds but Inngest loses the return value mid-flight?**
-Inngest persists step outputs to its own durable store before returning control to the function. If the network drops between the step completing and the next step starting, Inngest replays from the last persisted checkpoint — it re-runs the step only if the output was never persisted. Since `fetch-page-0` is idempotent (it's a read), re-running it is safe. The `email-batch-*` steps are also idempotent via the `message_dispatch` table. Double-execution of any step produces the same result.
+**Edge case: worker crashes mid-fanout?**
+Already-enqueued jobs stay in Redis and get processed. The `campaign.ended` job itself will retry via BullMQ — `addBulk` is idempotent if the `creator.dropped` jobs already exist in the queue (BullMQ deduplicates by job ID). The `message_dispatch` table prevents any double-sends even if a job runs twice.
 
 ### Template System
 
@@ -438,9 +416,9 @@ AND escalated = false;
 **3. Weekly 5% sample review:**
 Pull 5% of `DATA` + `GENERAL` conversations from the past week. Staff review takes ~30 minutes. This catches systemic errors (wrong pay info format, stale static knowledge) that metrics miss.
 
-**4. Cost per message** (already tracked in `logResponse`): stay under $0.01. At gpt-4.1-mini pricing, a typical 500-token context + 100-token reply costs ~$0.002. We have headroom.
+**4. Cost per message** (already tracked in `logResponse`): stay under $0.01. At Claude Haiku pricing, a typical 500-token context + 100-token reply costs ~$0.002. We have headroom.
 
-**Where metrics live:** All four metrics query the `bot_response_log` table in Supabase. Escalation rate and cost are surfaced in a Metabase dashboard (one SQL query per card). Reopen rate runs as a daily Inngest cron. The 5% sample is a saved Supabase query that staff run manually each Monday.
+**Where metrics live:** All four metrics query the `bot_response_log` table in Supabase. Escalation rate and cost are surfaced in a Metabase dashboard (one SQL query per card). Reopen rate runs as a daily cron job. The 5% sample is a saved Supabase query that staff run manually each Monday.
 
 **Context edge case — sparse data:** If a creator has fewer than 3 payments or posts, the arrays are simply shorter. The system prompt receives `(no recent payments)` or `(no recent posts)` as placeholders. The bot treats missing data as a structural null and escalates rather than fabricating. This is already handled in `buildSystemPrompt()` in `lib/bot/llm.ts`.
 
@@ -583,7 +561,7 @@ I considered a view that UNIONs `messages`, `inbox_events`, and `conversations`.
 2. **Pagination breaks**: UNION + ORDER BY + LIMIT across tables with different schemas is painful and slow
 3. **Subscription model**: Supabase Realtime can subscribe to a table. It can't subscribe to a view. A dedicated table means one subscription, not three.
 
-The tradeoff: slight write-side duplication — when a `payment.sent` event fires, we write to both the `inbox_items` table (in-app) and call Resend (email). The preview text is stored redundantly. That's acceptable — the read path is clean and the write path is controlled by one Inngest worker.
+The tradeoff: slight write-side duplication — when a `payment.sent` event fires, we write to both the `inbox_items` table (in-app) and call Resend (email). The preview text is stored redundantly. That's acceptable — the read path is clean and the write path is controlled by one BullMQ worker.
 
 ### Client Subscription
 
@@ -624,41 +602,39 @@ WHERE creator_id = $1 AND read_at IS NULL;
 ```
 Cached in React state, updated by Realtime subscription.
 
-**Quiet hours:** Stored on the creator row as `quiet_hours_start` (e.g., `"22:00"`) and `quiet_hours_end` (e.g., `"08:00"`) in the creator's local timezone. In-app `inbox_items` are always written — we don't suppress them. External channels (email, SMS, push) are gated: the Inngest worker checks `isQuietHours(creator)` before dispatching. If quiet, it `step.sleep`s until the window ends and sends then.
+**Quiet hours:** Stored on the creator row as `quiet_hours_start` (e.g., `"22:00"`) and `quiet_hours_end` (e.g., `"08:00"`) in the creator's local timezone. In-app `inbox_items` are always written — we don't suppress them. External channels (email, SMS, push) are gated: the BullMQ worker checks `isQuietHours(creator)` before dispatching. If quiet, the job is re-queued with a delay until the window ends.
 
 ### Digest Rollups
 
 `post.approved` is high volume — at 5M creators, thousands per day. Sending one in-app notification per approval creates inbox spam.
 
-**Digest logic in the Inngest worker:**
+**Digest logic in the BullMQ worker:**
 
 ```ts
-export const onPostApproved = inngest.createFunction(
-  { id: "post-approved", batchEvents: { maxSize: 100, timeout: "1h" } },
-  { event: "event/post.approved" },
-  async ({ events, step }) => {
-    // Group by creator_id
-    const byCreator = groupBy(events, e => e.data.creatorId)
+// BullMQ worker — case "event/post.approved"
+// Jobs accumulate in Redis; a digest worker runs every hour per creator
+const recentApprovals = await supabaseAdmin
+  .from('message_dispatch')
+  .select('*')
+  .eq('status', 'pending')
+  .like('idempotency_key', `post.approved:${creatorId}:%`)
+  .gte('created_at', new Date(Date.now() - 3600_000).toISOString())
 
-    for (const [creatorId, creatorEvents] of Object.entries(byCreator)) {
-      if (creatorEvents.length === 1) {
-        // Single approval — normal notification
-        await insertInboxItem(creatorId, 'system', {
-          preview: `Your post was approved!`,
-          entity_type: 'post',
-          entity_id: creatorEvents[0].data.postId,
-        })
-      } else {
-        // Batch — digest card
-        await insertInboxItem(creatorId, 'system', {
-          preview: `${creatorEvents.length} posts approved today`,
-          entity_type: 'post_batch',
-          metadata: { post_ids: creatorEvents.map(e => e.data.postId) },
-        })
-      }
-    }
-  }
-)
+if (recentApprovals.data.length === 1) {
+  // Single approval — normal notification
+  await insertInboxItem(creatorId, 'system', {
+    preview: `Your post was approved!`,
+    entity_type: 'post',
+    entity_id: postId,
+  })
+} else {
+  // Batch — digest card
+  await insertInboxItem(creatorId, 'system', {
+    preview: `${recentApprovals.data.length} posts approved today`,
+    entity_type: 'post_batch',
+    metadata: { count: recentApprovals.data.length },
+  })
+}
 ```
 
 `post.rejected` is always individual — it includes a rejection reason the creator needs to read. Never batch rejections.
@@ -695,7 +671,7 @@ export const onPostApproved = inngest.createFunction(
 
 - **Supabase Realtime**: default connection limit ~500k. At 500k creators with active sessions, we're near the ceiling. Fix: Supabase Enterprise, or swap to Ably for Realtime while keeping Supabase for storage.
 - **`inbox_items` table size**: 500k creators × 10 items/week = 5M rows/week. After 6 months: 130M rows. Add `created_at` range partitioning (monthly) and a TTL job that archives items older than 90 days to cold storage.
-- **Inngest free tier**: throttled at scale. Upgrade to paid ($100–500/month) long before 500k.
+- **BullMQ worker**: single Railway instance handles current load. Add replicas when queue depth stays >0 for >5 minutes.
 
 ### What Breaks at 5M Creators
 
@@ -711,7 +687,7 @@ export const onPostApproved = inngest.createFunction(
 | Supabase Enterprise | 5M realtime connections, 500GB DB | ~$2,000/mo |
 | Resend (email) | 25M emails/mo | ~$25,000/mo |
 | Twilio SMS | 1M SMS/mo (job.offered only) | ~$7,500/mo |
-| Inngest | 50M events/mo | ~$500/mo |
+| Railway worker + Redis | Always-on, 50M jobs/mo | ~$15/mo |
 | Claude Haiku (bot) | 500k conversations/mo | ~$1,500/mo |
 | Vercel Fluid Compute | High-throughput route handlers | ~$2,000/mo |
 | **Total** | | **~$38,500/mo** |
@@ -724,13 +700,13 @@ I'd migrate incrementally — never cut over all at once.
 
 **Week 1:** Deploy `inbox_items` table and RLS. Write a thin adapter that mirrors existing payment emails into it. No behavior changes — creators now get an in-app notification in addition to the email they already got. Zero risk.
 
-**Week 2:** Replace the payment.sent ad-hoc trigger with an Inngest worker. Idempotency goes live. Old email code is still running — run both in parallel and compare logs. Kill the old trigger after 1 week of clean parallel runs.
+**Week 2:** Replace the payment.sent ad-hoc trigger with a BullMQ worker job. Idempotency goes live. Old email code is still running — run both in parallel and compare logs. Kill the old trigger after 1 week of clean parallel runs.
 
 **Week 3:** Fix Supabase Realtime RLS. New subscription model goes out. Test with 50 creators in a shadow group, then roll out fully. Remove client-side filtering code.
 
 **Week 4:** Deploy FAQ bot to support inbox. Human queue still works — bot intercepts first, escalates if needed. Staff notice fewer repeat questions in Slack.
 
-**Week 5+:** Migrate brand chat to `inbox_items`. Decommission old direct-DB-subscription code. Decommission ad-hoc cron notifications one by one as their Inngest equivalents prove stable.
+**Week 5+:** Migrate brand chat to `inbox_items`. Decommission old direct-DB-subscription code. Decommission ad-hoc cron notifications one by one as their BullMQ equivalents prove stable.
 
 ---
 
@@ -749,7 +725,7 @@ One week. One goal: move the needle on creator communication reliability and sto
 **Day 1: `inbox_items` table + RLS**
 The foundation. Everything else writes here. Get the schema right, set up RLS, write the insert helper. Mirror `payment.sent` events into it so creators start seeing in-app payment notifications immediately. This is the highest-leverage day — everything downstream depends on it.
 
-**Day 2: Inngest worker for `payment.sent` + idempotency**
+**Day 2: BullMQ worker for `payment.sent` + idempotency**
 Highest stakes event. Replace the ad-hoc email trigger. Run old and new in parallel for 48 hours. Idempotency table goes live. If we ship nothing else this week, this is the one that prevents the worst bugs.
 
 **Day 3: Fix Supabase Realtime RLS for human chat**
@@ -768,10 +744,10 @@ One feed. Unread counts. Deep links to the relevant entity (payment, post, campa
 
 ### Why This Order
 
-The ordering is deliberate: foundation → highest-stakes reliability → security → creator UX. Shipping the inbox UI before the RLS fix would mean deploying something creators see on top of a known security issue. Shipping Inngest before the `inbox_items` table means events have nowhere to land. The dependencies are real.
+The ordering is deliberate: foundation → highest-stakes reliability → security → creator UX. Shipping the inbox UI before the RLS fix would mean deploying something creators see on top of a known security issue. Shipping the worker before the `inbox_items` table means events have nowhere to land. The dependencies are real.
 - File attachments in chat — week 2
 - Quiet hours — week 2
-- Fanout optimization at 10k scale — Inngest handles current load; optimize when campaigns are actually ending at that scale
+- Fanout optimization at 10k scale — single worker handles current load; add replicas when needed
 
 ---
 
@@ -791,7 +767,7 @@ I used Claude Code (Claude Sonnet 4.6) as a thought partner throughout this assi
 
 **AI suggested using Supabase Realtime for the support bot chat instead of SSE polling.** I pushed back. Supabase Realtime requires a client-side auth token scoped to the requesting user. The bot currently uses `supabaseAdmin` server-side and the frontend has a hardcoded `CREATOR_ID` (demo mode). Swapping SSE for Realtime would require wiring up creator auth first — that's a separate track. SSE polling at 1-second intervals is correct for the current demo scale, and I said so.
 
-**AI suggested RabbitMQ for fanout.** Wrong tool for this stack. RabbitMQ requires self-hosted infra, doesn't integrate with Vercel, and adds an ops burden we don't need. Inngest runs on top of our existing Vercel deployment, has a built-in dashboard, handles retries per step, and supports durable fan-outs natively. I overrode it.
+**AI suggested RabbitMQ for fanout.** Wrong tool for this stack. RabbitMQ requires self-hosted infra, doesn't integrate with Vercel, and adds an ops burden we don't need. BullMQ on Railway runs as an always-on worker, has no Vercel timeout risk, handles retries natively, and costs a flat ~$10/month regardless of event volume. I chose it over Inngest for exactly the burst-fanout constraints this assignment specifies.
 
 **AI suggested a UNION view for the unified inbox.** I rejected this. The appeal is that you don't duplicate data. The problem is that UNION views don't support Supabase Realtime subscriptions (you can't subscribe to a view with `postgres_changes`), RLS on views spanning multiple tables is fragile, and paginating a UNION is painful. A dedicated `inbox_items` table with one subscription and one clean RLS policy is the right call.
 
@@ -821,9 +797,9 @@ When writing the idempotency insert, Claude initially suggested `ON CONFLICT DO 
 
 *(Raw Claude Code transcript available on request — the session history is preserved in the repo's git log.)*
 
-### Inngest Function Lifecycle
+### BullMQ Worker Lifecycle
 
-One operational detail worth noting: when an Inngest function is no longer needed (e.g., `warmup.reminder` after the warmup feature is retired), it must be explicitly removed from `allFunctions` in `lib/inngest/functions.ts` and redeployed. Inngest will deregister it on the next sync. We don't delete the function file immediately — it stays in a `deprecated/` folder for one release cycle in case rollback is needed.
+When a job type is no longer needed (e.g., `warmup.reminder` after the warmup feature is retired), remove its `case` from the worker's `processJob` switch and redeploy. In-flight jobs of that type will hit the `default` branch and throw — BullMQ moves them to the failed queue. Drain the failed queue after confirming no active jobs remain.
 
 ### Time Spent
 
