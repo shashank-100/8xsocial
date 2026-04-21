@@ -1,4 +1,4 @@
-import { inngest } from "@/lib/inngest/client"
+import { getEventQueue } from "@/lib/queue/client"
 
 const VALID_EVENTS = new Set([
   "event/payment.sent",
@@ -26,10 +26,10 @@ export async function POST(req: Request) {
   }
 
   try {
-    await inngest.send({ name, data })
+    await getEventQueue().add(name, data)
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
-    console.error("[events] inngest.send failed:", msg)
+    console.error("[events] queue.add failed:", msg)
     return Response.json({ error: "failed to enqueue event", detail: msg }, { status: 502 })
   }
 
