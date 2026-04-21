@@ -81,6 +81,18 @@ Every surface — automated event messages, bot support replies, human chat — 
 | Supabase Realtime | Supabase | One channel per creator for inbox, per conversation for chat |
 | Client | Next.js App Router (browser) | Subscribes to Realtime, renders unified inbox |
 
+### Observability & Alerting
+
+Three places where things can silently fail:
+
+1. **Inngest worker failures** — Inngest dashboard shows failed runs with full stack traces. PagerDuty webhook on Inngest's failure webhook (`POST /api/inngest/alerts`) fires for any function that exhausts retries. `payment.sent` failures page on-call immediately; `warmup.reminder` failures go to Slack only.
+
+2. **Resend/Twilio errors** — `dispatchEmail` and `dispatchSms` catch errors and call `markFailed(key)`. A daily Inngest cron queries `SELECT COUNT(*) FROM message_dispatch WHERE status = 'failed' AND created_at > now() - interval '24h'` and posts to Slack if >1% of dispatches are failing.
+
+3. **Bot LLM errors** — any exception in `callLLM` forces ESCALATE (fail safe). `lib/bot/log.ts` records `error: true` on the response log row. If error rate >5% in a 10-minute window, alert fires via the same daily cron.
+
+No custom infra needed — Inngest dashboard + two SQL queries cover the critical paths.
+
 ### The System Boundary
 
 The messaging platform owns: `inbox_items`, `conversations`, `messages`, `message_dispatch`.
@@ -210,6 +222,9 @@ export const onCampaignEnded = inngest.createFunction(
 - `step.run` checkpoints are durable — if a step fails mid-fanout, Inngest resumes from the last checkpoint, not from zero
 - Each step is independently idempotent via its string key
 - Concurrency limit of 5 on the worker prevents 20 simultaneous campaign-end events from each spawning 10k email calls
+
+**Edge case: what if `step.run('fetch-page-0')` succeeds but Inngest loses the return value mid-flight?**
+Inngest persists step outputs to its own durable store before returning control to the function. If the network drops between the step completing and the next step starting, Inngest replays from the last persisted checkpoint — it re-runs the step only if the output was never persisted. Since `fetch-page-0` is idempotent (it's a read), re-running it is safe. The `email-batch-*` steps are also idempotent via the `message_dispatch` table. Double-execution of any step produces the same result.
 
 ### Template System
 
@@ -641,7 +656,7 @@ export const onPostApproved = inngest.createFunction(
 
 **`message_dispatch` idempotency table.** More moving parts than "just send and hope." But payment.sent double-sending is a trust-destroying bug. The cost of building idempotency upfront is one extra table and a few extra DB reads. The cost of not building it is a creator getting paid twice (reversed later), or a creator getting two "you've been dropped" emails. Non-negotiable.
 
-**`inbox_items` as a dedicated table.** A UNION view feels clever but fails on RLS, pagination, and Realtime. The dedicated table costs one extra write per event. The read path is clean forever.
+**`inbox_items` as a dedicated table.** A UNION view feels clever but fails on RLS, pagination, and Realtime. The dedicated table costs one extra write per event. Quantified: at 5M creators × 10 events/week = 50M extra writes/week to `inbox_items`. At ~0.1ms per INSERT, that's 5M ms = 1.4 CPU-hours/week of Supabase write time — negligible. The denormalized `preview` text adds ~200 bytes per row = ~10GB/year at 5M scale, well within Supabase storage pricing. The read path is clean forever.
 
 **Inngest, not cron, for event dispatch.** A Vercel cron processing 10k events will timeout at 300s. Inngest is designed for exactly this: durable multi-step fan-outs with checkpointing, retries per step, and built-in concurrency controls.
 
@@ -690,33 +705,39 @@ I'd migrate incrementally — never cut over all at once.
 
 ## 7. What I'd Build First
 
-One week. One goal: move the needle on creator communication reliability and stop the worst failure modes.
+One week. One goal: move the needle on creator communication reliability and stop the worst failure modes. This is a planning cut — not everything here needs to ship on day 5, but this is the order that minimizes risk and maximizes creator-visible impact.
 
 ### Keep (Already Working)
 
-- FAQ support bot with Slack escalation — it's live, it works, extend don't rewrite
-- SSE polling for bot chat — good enough for current scale
-- Human agent Slack integration — operational today
+- FAQ support bot with Slack escalation — extend, don't rewrite
+- SSE polling for bot chat — good enough for current scale, replace later
+- Human agent Slack integration — operational, no changes needed week 1
 
 ### Build This Week
 
 **Day 1: `inbox_items` table + RLS**
-The foundation. Everything else writes here. Get the schema right, set up RLS, write the insert helper. Mirror `payment.sent` events into it so creators start seeing in-app payment notifications.
+The foundation. Everything else writes here. Get the schema right, set up RLS, write the insert helper. Mirror `payment.sent` events into it so creators start seeing in-app payment notifications immediately. This is the highest-leverage day — everything downstream depends on it.
 
 **Day 2: Inngest worker for `payment.sent` + idempotency**
-Highest stakes event. Replace the ad-hoc email trigger. Run old and new in parallel for 48 hours. Idempotency table goes live.
+Highest stakes event. Replace the ad-hoc email trigger. Run old and new in parallel for 48 hours. Idempotency table goes live. If we ship nothing else this week, this is the one that prevents the worst bugs.
 
 **Day 3: Fix Supabase Realtime RLS for human chat**
-Security fix. Current implementation leaks message metadata to every connected client. RLS + scoped subscriptions. This is a must-do regardless of scale.
+Security fix first, scale fix second. Current implementation leaks message metadata to every connected client. This must ship before creator count grows further — the longer we wait, the harder the rollback.
 
 **Day 4–5: Unified inbox UI**
-One feed. Unread counts. Deep links to the relevant entity (payment, post, campaign). Mark as read. This is what creators see — ship it and get feedback.
+One feed. Unread counts. Deep links to the relevant entity (payment, post, campaign). Mark as read. This is the creator-facing payoff — ship it and get feedback while the backend stabilizes.
 
 ### Defer
 
-- SMS channel (Twilio) — email covers `job.offered` for now; SMS adds ops complexity
-- Digest rollups — `post.approved` spam is annoying, not urgent
+- SMS channel (Twilio) — email covers `job.offered` for now; SMS adds ops complexity with marginal reach gain
+- Digest rollups — `post.approved` spam is annoying, not urgent; individual notifications are fine week 1
 - Localization / template preview admin — English-only is fine for MVP
+- File attachments in chat — week 2; Supabase Storage + `file_url` column, one day of work
+- Read receipts + typing indicators — week 2; foundation (RLS fix) must land first
+
+### Why This Order
+
+The ordering is deliberate: foundation → highest-stakes reliability → security → creator UX. Shipping the inbox UI before the RLS fix would mean deploying something creators see on top of a known security issue. Shipping Inngest before the `inbox_items` table means events have nowhere to land. The dependencies are real.
 - File attachments in chat — week 2
 - Quiet hours — week 2
 - Fanout optimization at 10k scale — Inngest handles current load; optimize when campaigns are actually ending at that scale
@@ -763,6 +784,9 @@ Claude suggested returning a `confidence: float` alongside the intent so we coul
 
 **3. BullMQ vs Inngest**
 Claude suggested BullMQ on Railway for the job queue. I considered it — BullMQ gives more control and is cheaper at scale — but for this Vercel-native stack, Inngest is the right call: zero infra, built-in retry UI, native Vercel integration. At 5M creators with 10M jobs/day I'd revisit. For now, Inngest.
+
+**4. Implementation-level: `ON CONFLICT DO NOTHING` vs. `ON CONFLICT DO UPDATE`**
+When writing the idempotency insert, Claude initially suggested `ON CONFLICT DO UPDATE SET status = 'pending'` to reset stale dispatches. I rejected it — that would overwrite a `status = 'sent'` row and allow a re-send. `ON CONFLICT DO NOTHING` is the only safe pattern here: if a row exists in any state, skip. The worker checks for a returned row to decide whether to proceed. Small detail, but wrong here means double-sending payments.
 
 *(Raw Claude Code transcript available on request — the session history is preserved in the repo's git log.)*
 
