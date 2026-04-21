@@ -312,7 +312,7 @@ to messages       tagEscalated()
 
 ### Context Injection
 
-The existing `getContext()` in `lib/bot/context.ts` already fetches creator + campaign data. I'd extend it to include the data the bot most commonly needs:
+The existing `getContext()` fetches creator + campaign data from Supabase and passes it to the LLM system prompt. I extended it to include the data the bot most commonly needs:
 
 ```ts
 // Extended context — adds payment and post history
@@ -348,7 +348,7 @@ export async function getContext(creatorId: string, campaignId?: string | null) 
 }
 ```
 
-These three additions — recent payments, recent posts, pending balance — cover the top 5 questions creators ask. The system prompt already gets built from this context in `lib/bot/llm.ts`; I'd add sections for each new field.
+These three additions — recent payments, recent posts, pending balance — cover the top 5 questions creators ask. The system prompt is built from this context object and injected as the `system` parameter to the LLM call; each new field gets its own clearly labelled section so the model knows exactly what data is verified vs. unknown.
 
 ### Confidence Model
 
@@ -390,7 +390,30 @@ The creator sees no seam. The conversation history is continuous — bot message
 
 ### Measuring Bot Quality
 
-Reading every conversation doesn't scale. Three metrics that do:
+Reading every conversation doesn't scale. Three metrics that do.
+
+**`bot_response_log` table schema** (already implemented in `lib/bot/log.ts`):
+
+```sql
+CREATE TABLE bot_response_log (
+  id             UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  creator_id     UUID NOT NULL REFERENCES creators(id),
+  message        TEXT NOT NULL,
+  response       TEXT NOT NULL,
+  escalated      BOOLEAN NOT NULL DEFAULT false,
+  intent         TEXT,           -- 'DATA' | 'GENERAL' | 'ESCALATE'
+  input_tokens   INTEGER,
+  output_tokens  INTEGER,
+  cost_usd       NUMERIC(10, 6),
+  error          BOOLEAN NOT NULL DEFAULT false,
+  created_at     TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX idx_bot_log_creator ON bot_response_log (creator_id, created_at DESC);
+CREATE INDEX idx_bot_log_escalated ON bot_response_log (created_at DESC) WHERE escalated = true;
+```
+
+Every bot response — whether DATA, GENERAL, or ESCALATE — writes a row. This is the source of truth for all four metrics below.
 
 **1. Escalation rate by intent (already loggable via `lib/bot/log.ts`):**
 ```sql
