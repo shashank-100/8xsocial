@@ -40,6 +40,7 @@ function timeAgo(iso: string): string {
 
 function itemIcon(item: InboxItem): string {
   if (item.type === "support") return "💬"
+  if (item.type === "chat") return "💬"
   if (item.entity_type === "payment") return "💰"
   if (item.entity_type === "post") return "✅"
   if (item.entity_type === "post_batch") return "🎯"
@@ -48,37 +49,107 @@ function itemIcon(item: InboxItem): string {
   return "📣"
 }
 
+function threadTitle(item: InboxItem): string {
+  if (item.type === "support") return "8x Support"
+  if (item.type === "chat") return (item.metadata?.brand_name as string) ?? "Brand"
+  if (item.entity_type === "payment") return "Payment"
+  if (item.entity_type === "post") return "Post Update"
+  if (item.entity_type === "post_batch") return "Posts"
+  if (item.entity_type === "campaign") return "Campaign"
+  if (item.entity_type === "job") return "Job Offer"
+  return "Notification"
+}
+
+// ─── Thread Group (for grouping chat/support by thread) ───────────────────────
+
+interface ThreadGroup {
+  key: string
+  type: InboxItem["type"]
+  title: string
+  icon: string
+  preview: string
+  time: string
+  unread: number
+  item: InboxItem
+}
+
+function groupIntoThreads(items: InboxItem[]): ThreadGroup[] {
+  const map = new Map<string, ThreadGroup>()
+
+  for (const item of items) {
+    const key = item.thread_id ?? item.id
+    const existing = map.get(key)
+    if (!existing) {
+      map.set(key, {
+        key,
+        type: item.type,
+        title: threadTitle(item),
+        icon: itemIcon(item),
+        preview: item.preview ?? "New message",
+        time: item.created_at,
+        unread: item.read_at ? 0 : 1,
+        item,
+      })
+    } else {
+      if (item.created_at > existing.time) {
+        existing.preview = item.preview ?? existing.preview
+        existing.time = item.created_at
+        existing.item = item
+      }
+      if (!item.read_at) existing.unread += 1
+    }
+  }
+
+  return Array.from(map.values()).sort((a, b) => b.time.localeCompare(a.time))
+}
+
 // ─── Inbox Row ────────────────────────────────────────────────────────────────
 
 function InboxRow({
-  item,
-  active,
+  group,
   onClick,
 }: {
-  item: InboxItem
-  active: boolean
+  group: ThreadGroup
   onClick: () => void
 }) {
+  const isChat = group.type === "chat" || group.type === "support"
+  const previewText = isChat
+    ? group.preview
+    : group.preview
+
   return (
     <button
       onClick={onClick}
-      className={`w-full text-left px-4 py-3 flex items-start gap-3 transition-colors border-b border-gray-100 last:border-0 ${
-        active ? "bg-blue-50" : "hover:bg-gray-50"
-      }`}
+      className="w-full text-left px-4 py-3 flex items-center gap-3 transition-colors border-b border-gray-100 last:border-0 hover:bg-gray-50"
     >
-      <div className="text-xl mt-0.5 shrink-0">{itemIcon(item)}</div>
-      <div className="flex-1 min-w-0">
-        <p
-          className={`text-sm leading-snug truncate ${
-            !item.read_at ? "font-semibold text-gray-900" : "text-gray-600"
-          }`}
-        >
-          {item.preview ?? "New message"}
-        </p>
-        <p className="text-xs text-gray-400 mt-0.5">{timeAgo(item.created_at)}</p>
+      {/* Avatar */}
+      <div className={`w-10 h-10 rounded-full shrink-0 flex items-center justify-center text-lg ${
+        isChat ? "bg-gray-900 text-white" : "bg-gray-100"
+      }`}>
+        {isChat
+          ? <span className="text-xs font-bold">{group.title.slice(0, 2).toUpperCase()}</span>
+          : <span>{group.icon}</span>
+        }
       </div>
-      {!item.read_at && (
-        <span className="w-2 h-2 rounded-full bg-blue-500 mt-1.5 shrink-0" />
+
+      {/* Content */}
+      <div className="flex-1 min-w-0">
+        <div className="flex items-center justify-between gap-2">
+          <p className={`text-sm truncate ${group.unread > 0 ? "font-semibold text-gray-900" : "font-medium text-gray-700"}`}>
+            {group.title}
+          </p>
+          <p className="text-xs text-gray-400 shrink-0">{timeAgo(group.time)}</p>
+        </div>
+        <p className={`text-xs truncate mt-0.5 ${group.unread > 0 ? "text-gray-700" : "text-gray-400"}`}>
+          {isChat ? "" : "System: "}{previewText}
+        </p>
+      </div>
+
+      {/* Unread badge */}
+      {group.unread > 0 && (
+        <span className="w-5 h-5 rounded-full bg-blue-500 text-white text-xs font-bold flex items-center justify-center shrink-0">
+          {group.unread > 9 ? "9+" : group.unread}
+        </span>
       )}
     </button>
   )
@@ -409,12 +480,12 @@ function InboxWidget() {
     setUnreadCount((c) => Math.max(0, c - 1))
   }
 
-  function handleItemClick(item: InboxItem) {
-    markRead(item)
-    if (item.type === "chat" || item.type === "support") {
+  function handleGroupClick(group: ThreadGroup) {
+    markRead(group.item)
+    if (group.type === "chat" || group.type === "support") {
       setView("chat")
     } else {
-      setSelectedItem(item)
+      setSelectedItem(group.item)
       setView("detail")
     }
   }
@@ -469,15 +540,14 @@ function InboxWidget() {
                     <p className="text-xs text-gray-300">We'll notify you here when something happens</p>
                   </div>
                 )}
-                {!loading && items.map((item) =>
-                  item.entity_type === "post_batch" ? (
-                    <DigestCard key={item.id} item={item} onRead={() => markRead(item)} />
+                {!loading && groupIntoThreads(items).map((group) =>
+                  group.item.entity_type === "post_batch" ? (
+                    <DigestCard key={group.key} item={group.item} onRead={() => markRead(group.item)} />
                   ) : (
                     <InboxRow
-                      key={item.id}
-                      item={item}
-                      active={false}
-                      onClick={() => handleItemClick(item)}
+                      key={group.key}
+                      group={group}
+                      onClick={() => handleGroupClick(group)}
                     />
                   )
                 )}
