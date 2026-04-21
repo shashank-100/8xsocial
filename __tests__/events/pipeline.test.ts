@@ -11,13 +11,13 @@ vi.mock("@/lib/supabase/admin", () => ({
   },
 }))
 
-vi.mock("@/lib/inngest/dispatch", () => ({
+vi.mock("@/lib/dispatch/dispatch", () => ({
   dispatchInApp: vi.fn().mockResolvedValue(undefined),
   dispatchEmail: vi.fn().mockResolvedValue(undefined),
   dispatchSms: vi.fn().mockResolvedValue(undefined),
 }))
 
-import { dispatchInApp, dispatchEmail, dispatchSms } from "@/lib/inngest/dispatch"
+import { dispatchInApp, dispatchEmail, dispatchSms } from "@/lib/dispatch/dispatch"
 import { templates } from "@/lib/templates"
 
 const baseCtx = { creatorName: "Test Creator", creatorEmail: "creator@test.com" }

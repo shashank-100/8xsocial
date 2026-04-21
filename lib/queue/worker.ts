@@ -1,7 +1,7 @@
 import { Worker, type Job } from "bullmq"
 import { Redis } from "ioredis"
 import { supabaseAdmin } from "@/lib/supabase/admin"
-import { dispatchInApp, dispatchEmail, dispatchSms } from "@/lib/inngest/dispatch"
+import { dispatchInApp, dispatchEmail, dispatchSms } from "@/lib/dispatch/dispatch"
 import type { TemplateCtx } from "@/lib/templates"
 
 async function fetchCreator(creatorId: string) {
