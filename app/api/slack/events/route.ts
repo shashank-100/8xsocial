@@ -1,5 +1,5 @@
 import { createHmac } from "crypto"
-import { findConversationBySlackThread, saveMessage } from "@/lib/bot/conversation"
+import { findConversationBySlackThread, saveMessage, resolveConversation } from "@/lib/bot/conversation"
 
 function verifySlackSignature(req: Request, body: string): boolean {
   const secret = process.env.SLACK_SIGNING_SECRET?.trim()
@@ -18,7 +18,15 @@ function verifySlackSignature(req: Request, body: string): boolean {
 
 export async function POST(req: Request) {
   const body = await req.text()
-  const payload = JSON.parse(body)
+
+  // Block actions come as form-encoded: payload={"type":"block_actions",...}
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  let payload: any
+  if (body.startsWith("payload=")) {
+    payload = JSON.parse(decodeURIComponent(body.slice("payload=".length)))
+  } else {
+    payload = JSON.parse(body)
+  }
 
   // Slack URL verification challenge — respond before signature check
   if (payload.type === "url_verification") {
@@ -32,6 +40,16 @@ export async function POST(req: Request) {
 
   if (!verifySlackSignature(req, body)) {
     return Response.json({ error: "invalid signature" }, { status: 401 })
+  }
+
+  // Handle Close Ticket button click
+  if (payload.type === "block_actions") {
+    const actions = payload.actions as { action_id: string; value: string }[]
+    const closeAction = actions?.find((a) => a.action_id === "close_ticket")
+    if (closeAction) {
+      await resolveConversation(closeAction.value)
+    }
+    return Response.json({ ok: true })
   }
 
   const event = payload.event

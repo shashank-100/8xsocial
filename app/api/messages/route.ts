@@ -83,7 +83,13 @@ export async function POST(req: Request) {
           )
           const questionToAnswer = originalQuestion?.content ?? message
           const result = await callLLM(
-            { creator: context.creator, campaign: context.campaign! },
+            {
+              creator: context.creator,
+              campaign: context.campaign!,
+              recentPayments: context.recentPayments,
+              recentPosts: context.recentPosts,
+              pendingBalance: context.pendingBalance,
+            },
             questionToAnswer,
             history
           )
@@ -94,7 +100,13 @@ export async function POST(req: Request) {
         // Call LLM with first campaign as fallback — it can answer creator-level + ESCALATE/GENERAL without campaign
         const history = await getHistory(conversation.id)
         const result = await callLLM(
-          { creator: context.creator, campaign: campaigns[0] as never },
+          {
+            creator: context.creator,
+            campaign: campaigns[0] as never,
+            recentPayments: context.recentPayments,
+            recentPosts: context.recentPosts,
+            pendingBalance: context.pendingBalance,
+          },
           message,
           history
         )
@@ -115,7 +127,13 @@ export async function POST(req: Request) {
 
       const history = await getHistory(conversation.id)
       const result = await callLLM(
-        { creator: context.creator, campaign: context.campaign! },
+        {
+          creator: context.creator,
+          campaign: context.campaign!,
+          recentPayments: context.recentPayments,
+          recentPosts: context.recentPosts,
+          pendingBalance: context.pendingBalance,
+        },
         message,
         history
       )

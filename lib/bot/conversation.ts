@@ -63,6 +63,15 @@ export async function tagEscalated(conversationId: string, slackThreadTs?: strin
   if (error) throw new Error(`Failed to tag escalated: ${error.message}`)
 }
 
+export async function resolveConversation(conversationId: string) {
+  const { error } = await supabaseAdmin
+    .from("conversations")
+    .update({ status: "resolved", escalated: false })
+    .eq("id", conversationId)
+
+  if (error) throw new Error(`Failed to resolve conversation: ${error.message}`)
+}
+
 export async function findConversationBySlackThread(threadTs: string) {
   const { data } = await supabaseAdmin
     .from("conversations")

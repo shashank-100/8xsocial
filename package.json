@@ -3,7 +3,8 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "dev": "next dev",
+    "dev": "concurrently --names \"next,inngest\" --prefix-colors \"blue,magenta\" \"next dev\" \"npx inngest-cli@latest dev -u http://localhost:3000/api/inngest\"",
+    "dev:next": "next dev",
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
@@ -11,9 +12,12 @@
     "test:e2e": "tsx scripts/run-tests.ts"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "^0.90.0",
     "@supabase/ssr": "^0.10.2",
     "@supabase/supabase-js": "^2.103.0",
+    "inngest": "^4.2.4",
     "next": "16.2.3",
+    "openai": "^6.34.0",
     "react": "19.2.4",
     "react-dom": "19.2.4"
   },
@@ -23,6 +27,7 @@
     "@types/react": "^19",
     "@types/react-dom": "^19",
     "@vitejs/plugin-react": "^6.0.1",
+    "concurrently": "^9.2.1",
     "eslint": "^9",
     "eslint-config-next": "16.2.3",
     "tailwindcss": "^4",
