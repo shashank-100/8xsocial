@@ -681,7 +681,15 @@ export const onPostApproved = inngest.createFunction(
 
 **`inbox_items` as a dedicated table.** A UNION view feels clever but fails on RLS, pagination, and Realtime. The dedicated table costs one extra write per event. Quantified: at 5M creators × 10 events/week = 50M extra writes/week to `inbox_items`. At ~0.1ms per INSERT, that's 5M ms = 1.4 CPU-hours/week of Supabase write time — negligible. The denormalized `preview` text adds ~200 bytes per row = ~10GB/year at 5M scale, well within Supabase storage pricing. The read path is clean forever.
 
-**Inngest, not cron, for event dispatch.** A Vercel cron processing 10k events will timeout at 300s. Inngest is designed for exactly this: durable multi-step fan-outs with checkpointing, retries per step, and built-in concurrency controls.
+**BullMQ + Railway worker, not Inngest, for event dispatch.** This was a deliberate override of the default AI recommendation. When I asked Claude to suggest an event queue, it proposed Inngest — zero infrastructure, built-in dashboard, easy Vercel integration. I pushed back for three reasons:
+
+1. **Burst fanout.** The assignment requires 10k `creator.dropped` events in under a minute. Inngest's free tier caps batch size at 5 and timeout at 30s per function. Even on paid plans, Inngest's concurrency model (3 concurrent on free, configurable on paid) would require careful tuning. With BullMQ, `addBulk()` pushes all 10k jobs to Redis in a single pipeline — one round trip regardless of count. The worker processes them at concurrency 50, and scales horizontally by adding Railway replicas with zero code changes.
+
+2. **No Vercel timeout risk.** Inngest functions run inside Vercel route handlers. A campaign fanout touching 10k creators, 10k Supabase reads, and 10k Resend API calls will hit the 300s wall. BullMQ workers run as an always-on Railway process — no timeout, no cold starts, no function invocation cost per job.
+
+3. **Flat cost at scale.** Inngest charges per event step. At 5M creators × 10 events/month = 50M steps/month, the cost climbs fast. Railway worker + Redis is a flat ~$10–15/month regardless of volume.
+
+**Where Inngest still wins:** Early-stage projects with low volume and no dedicated infra. The built-in dashboard, zero-Redis setup, and `step.waitForEvent` orchestration primitives are genuinely excellent. If this were a 10k-creator product with no burst fanout requirement, I'd pick Inngest. The switch to BullMQ is the right call at the scale this assignment targets.
 
 ### What Breaks at 500k Creators
 
