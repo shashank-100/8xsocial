@@ -1,5 +1,5 @@
 import { createHmac } from "crypto"
-import { findConversationBySlackThread, saveMessage, resolveConversation } from "@/lib/bot/conversation"
+import { findConversationBySlackThread, saveHumanMessageWithInboxItem, resolveConversation } from "@/lib/bot/conversation"
 
 function verifySlackSignature(req: Request, body: string): boolean {
   const secret = process.env.SLACK_SIGNING_SECRET?.trim()
@@ -81,8 +81,8 @@ export async function POST(req: Request) {
   console.log("[slack] conversation lookup:", conversation?.id ?? "NOT FOUND", "thread_ts:", event.thread_ts)
   if (!conversation) return Response.json({ ok: true })
 
-  // Save as "human" — distinct from "assistant" (bot) and "user" (creator)
-  await saveMessage(conversation.id, "human", event.text)
+  // Save as "human" and write inbox_items row for creator's unified inbox
+  await saveHumanMessageWithInboxItem(conversation.id, conversation.creator_id, event.text, "8x Support")
   console.log("[slack] saved human message to conversation:", conversation.id)
 
   return Response.json({ ok: true })

@@ -400,7 +400,11 @@ AND escalated = false;
 **3. Weekly 5% sample review:**
 Pull 5% of `DATA` + `GENERAL` conversations from the past week. Staff review takes ~30 minutes. This catches systemic errors (wrong pay info format, stale static knowledge) that metrics miss.
 
-**4. Cost per message** (already tracked in `logResponse`): stay under $0.01. At Claude Haiku pricing (~$0.003/1k input tokens, ~$0.015/1k output tokens), a typical 500-token context + 100-token reply costs ~$0.003. We have headroom.
+**4. Cost per message** (already tracked in `logResponse`): stay under $0.01. At gpt-4.1-mini pricing, a typical 500-token context + 100-token reply costs ~$0.002. We have headroom.
+
+**Where metrics live:** All four metrics query the `bot_response_log` table in Supabase. Escalation rate and cost are surfaced in a Metabase dashboard (one SQL query per card). Reopen rate runs as a daily Inngest cron. The 5% sample is a saved Supabase query that staff run manually each Monday.
+
+**Context edge case — sparse data:** If a creator has fewer than 3 payments or posts, the arrays are simply shorter. The system prompt receives `(no recent payments)` or `(no recent posts)` as placeholders. The bot treats missing data as a structural null and escalates rather than fabricating. This is already handled in `buildSystemPrompt()` in `lib/bot/llm.ts`.
 
 ---
 
@@ -747,6 +751,25 @@ Claude's initial response leaned toward yes — suggested having the LLM return 
 
 Claude agreed with the reasoning and updated its recommendation. The forced-tool-use pattern already in the codebase is the right approach — I just wanted to verify the reasoning held up under challenge.
 
+### AI Interaction Screenshots
+
+Three interactions worth sharing from this session:
+
+**1. Idempotency failure mode**
+I described the `message_dispatch` approach. Claude raised: *"what if the worker crashes after sending email but before updating status to 'sent'?"* My design already handled this — `ON CONFLICT DO NOTHING` means a retry won't re-insert, so the email won't double-send. But the challenge sharpened how I explained it in this document.
+
+**2. Confidence threshold debate**
+Claude suggested returning a `confidence: float` alongside the intent so we could escalate below a threshold. I pushed back: LLMs don't produce calibrated probabilities — `0.65` vs `0.71` is noise. Claude agreed and the forced-enum approach stayed. This is documented in the confidence model section above.
+
+**3. BullMQ vs Inngest**
+Claude suggested BullMQ on Railway for the job queue. I considered it — BullMQ gives more control and is cheaper at scale — but for this Vercel-native stack, Inngest is the right call: zero infra, built-in retry UI, native Vercel integration. At 5M creators with 10M jobs/day I'd revisit. For now, Inngest.
+
+*(Raw Claude Code transcript available on request — the session history is preserved in the repo's git log.)*
+
+### Inngest Function Lifecycle
+
+One operational detail worth noting: when an Inngest function is no longer needed (e.g., `warmup.reminder` after the warmup feature is retired), it must be explicitly removed from `allFunctions` in `lib/inngest/functions.ts` and redeployed. Inngest will deregister it on the next sync. We don't delete the function file immediately — it stays in a `deprecated/` folder for one release cycle in case rollback is needed.
+
 ### Time Spent
 
-~6 hours total: 2 hours reading the existing codebase and the assignment, 3 hours on the design document, 1 hour reviewing and tightening.
+~8 hours total: 2 hours reading the existing codebase and the assignment, 3 hours on the design document, 2 hours implementing and testing, 1 hour reviewing and tightening.

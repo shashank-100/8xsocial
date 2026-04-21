@@ -50,6 +50,28 @@ export async function saveMessage(
   return data
 }
 
+export async function saveHumanMessageWithInboxItem(
+  conversationId: string,
+  creatorId: string,
+  content: string,
+  senderLabel: string
+) {
+  const msg = await saveMessage(conversationId, "human", content)
+
+  // Write inbox_items row so brand/staff messages appear in creator's unified inbox
+  await supabaseAdmin.from("inbox_items").insert({
+    creator_id: creatorId,
+    type: "chat",
+    thread_id: conversationId,
+    preview: `${senderLabel}: ${content.slice(0, 100)}`,
+    entity_type: null,
+    entity_id: null,
+    metadata: { conversation_id: conversationId, sender: senderLabel },
+  })
+
+  return msg
+}
+
 export async function tagEscalated(conversationId: string, slackThreadTs?: string | null) {
   const { error } = await supabaseAdmin
     .from("conversations")
