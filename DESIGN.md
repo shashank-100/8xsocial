@@ -813,8 +813,8 @@ I described the `message_dispatch` approach. Claude raised: *"what if the worker
 **2. Confidence threshold debate**
 Claude suggested returning a `confidence: float` alongside the intent so we could escalate below a threshold. I pushed back: LLMs don't produce calibrated probabilities — `0.65` vs `0.71` is noise. Claude agreed and the forced-enum approach stayed. This is documented in the confidence model section above.
 
-**3. BullMQ vs Inngest**
-Claude suggested BullMQ on Railway for the job queue. I considered it — BullMQ gives more control and is cheaper at scale — but for this Vercel-native stack, Inngest is the right call: zero infra, built-in retry UI, native Vercel integration. At 5M creators with 10M jobs/day I'd revisit. For now, Inngest.
+**3. Inbox data model**
+Claude initially suggested a UNION view across `messages` and `inbox_items` to avoid duplicating data. I rejected it: UNION views don't support Supabase Realtime `postgres_changes` subscriptions, RLS across a multi-table view is fragile, and paginating a UNION requires complex cursor logic. A dedicated `inbox_items` table with one subscription and one RLS policy is cleaner — the slight write-side duplication is worth it.
 
 **4. Implementation-level: `ON CONFLICT DO NOTHING` vs. `ON CONFLICT DO UPDATE`**
 When writing the idempotency insert, Claude initially suggested `ON CONFLICT DO UPDATE SET status = 'pending'` to reset stale dispatches. I rejected it — that would overwrite a `status = 'sent'` row and allow a re-send. `ON CONFLICT DO NOTHING` is the only safe pattern here: if a row exists in any state, skip. The worker checks for a returned row to decide whether to proceed. Small detail, but wrong here means double-sending payments.
