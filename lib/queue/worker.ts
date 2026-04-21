@@ -50,10 +50,12 @@ async function processJob(job: Job) {
         .eq("active", true)
       const creatorIds = (rows ?? []).map((r: { creator_id: string }) => r.creator_id)
       const { getEventQueue } = await import("./client")
-      await Promise.all(
-        creatorIds.map((creatorId: string) =>
-          getEventQueue().add("event/creator.dropped", { creatorId, campaignId, brandName })
-        )
+      // addBulk = single Redis pipeline regardless of count — safe for 10k+
+      await getEventQueue().addBulk(
+        creatorIds.map((creatorId: string) => ({
+          name: "event/creator.dropped",
+          data: { creatorId, campaignId, brandName },
+        }))
       )
       break
     }
