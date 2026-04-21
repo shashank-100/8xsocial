@@ -310,11 +310,45 @@ function DigestCard({ item, onRead }: { item: InboxItem; onRead: () => void }) {
   )
 }
 
-// ─── Unified Inbox Widget ─────────────────────────────────────────────────────
+// ─── Detail Screen (system notifications) ────────────────────────────────────
+
+function DetailScreen({ item, onBack }: { item: InboxItem; onBack: () => void }) {
+  const labelMap: Record<string, string> = {
+    payment: "Payment",
+    post: "Post Update",
+    post_batch: "Posts Digest",
+    campaign: "Campaign",
+    job: "Job Offer",
+  }
+  const label = item.entity_type ? (labelMap[item.entity_type] ?? "Notification") : "Notification"
+
+  return (
+    <div className="flex flex-col h-full">
+      <div className="flex items-center gap-3 px-4 py-3 border-b border-gray-100 shrink-0">
+        <button onClick={onBack} className="text-gray-400 hover:text-gray-700 transition-colors">
+          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+          </svg>
+        </button>
+        <p className="text-sm font-semibold text-gray-900">{label}</p>
+      </div>
+      <div className="flex-1 flex flex-col items-center justify-center px-6 gap-4 bg-gray-50">
+        <span className="text-5xl">{itemIcon(item)}</span>
+        <p className="text-base font-semibold text-gray-900 text-center leading-snug">
+          {item.preview ?? "New notification"}
+        </p>
+        <p className="text-xs text-gray-400">{timeAgo(item.created_at)}</p>
+      </div>
+    </div>
+  )
+}
+
+// ─── Creator Hub Widget ───────────────────────────────────────────────────────
 
 function InboxWidget() {
   const [open, setOpen] = useState(false)
-  const [view, setView] = useState<"inbox" | "support">("inbox")
+  const [view, setView] = useState<"inbox" | "chat" | "detail">("inbox")
+  const [selectedItem, setSelectedItem] = useState<InboxItem | null>(null)
   const [items, setItems] = useState<InboxItem[]>([])
   const [unreadCount, setUnreadCount] = useState(0)
   const [loading, setLoading] = useState(false)
@@ -332,7 +366,6 @@ function InboxWidget() {
     }
   }, [])
 
-  // Initial load
   useEffect(() => {
     if (open && view === "inbox" && items.length === 0) loadInbox()
   }, [open, view, loadInbox, items.length])
@@ -356,17 +389,12 @@ function InboxWidget() {
             setUnreadCount((c) => c + 1)
           } else if (payload.eventType === "UPDATE") {
             const updated = payload.new as InboxItem
-            setItems((prev) =>
-              prev.map((i) => (i.id === updated.id ? updated : i))
-            )
-            if (updated.read_at) {
-              setUnreadCount((c) => Math.max(0, c - 1))
-            }
+            setItems((prev) => prev.map((i) => (i.id === updated.id ? updated : i)))
+            if (updated.read_at) setUnreadCount((c) => Math.max(0, c - 1))
           }
         }
       )
       .subscribe()
-
     return () => { supabase.removeChannel(channel) }
   }, [supabase])
 
@@ -377,38 +405,49 @@ function InboxWidget() {
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ creatorId: CREATOR_ID }),
     })
-    // Realtime UPDATE will handle the state update; optimistic update too:
     setItems((prev) => prev.map((i) => (i.id === item.id ? { ...i, read_at: new Date().toISOString() } : i)))
     setUnreadCount((c) => Math.max(0, c - 1))
   }
 
   function handleItemClick(item: InboxItem) {
     markRead(item)
-    if (item.type === "support") setView("support")
+    if (item.type === "chat" || item.type === "support") {
+      setView("chat")
+    } else {
+      setSelectedItem(item)
+      setView("detail")
+    }
+  }
+
+  function goBack() {
+    setView("inbox")
+    setSelectedItem(null)
   }
 
   return (
     <div className="fixed bottom-6 right-6 z-50 flex flex-col items-end gap-3">
       {open && (
         <div className="w-[380px] h-[560px] bg-white rounded-2xl shadow-2xl border border-gray-200 flex flex-col overflow-hidden">
-          {view === "support" ? (
-            <SupportChat onClose={() => setView("inbox")} />
+          {view === "chat" ? (
+            <SupportChat onClose={goBack} />
+          ) : view === "detail" && selectedItem ? (
+            <DetailScreen item={selectedItem} onBack={goBack} />
           ) : (
             <>
               {/* Inbox header */}
               <div className="flex items-center justify-between px-4 py-3 border-b border-gray-100 shrink-0">
                 <div>
-                  <p className="text-sm font-semibold text-gray-900">Inbox</p>
+                  <p className="text-sm font-semibold text-gray-900">Messages</p>
                   {unreadCount > 0 && (
                     <p className="text-xs text-blue-500 font-medium">{unreadCount} unread</p>
                   )}
                 </div>
                 <div className="flex items-center gap-2">
                   <button
-                    onClick={() => setView("support")}
+                    onClick={() => setView("chat")}
                     className="text-xs text-gray-500 hover:text-gray-800 border border-gray-200 rounded-full px-3 py-1 transition-colors"
                   >
-                    Contact Support
+                    Support
                   </button>
                   <button onClick={() => setOpen(false)} className="text-gray-300 hover:text-gray-500 transition-colors ml-1">
                     <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -421,9 +460,7 @@ function InboxWidget() {
               {/* Inbox list */}
               <div className="flex-1 overflow-y-auto">
                 {loading && (
-                  <div className="flex items-center justify-center h-20 text-gray-400 text-sm">
-                    Loading...
-                  </div>
+                  <div className="flex items-center justify-center h-20 text-gray-400 text-sm">Loading...</div>
                 )}
                 {!loading && items.length === 0 && (
                   <div className="flex flex-col items-center justify-center h-full text-gray-400 gap-2">
@@ -433,7 +470,6 @@ function InboxWidget() {
                   </div>
                 )}
                 {!loading && items.map((item) =>
-                  // Digest card for post batches, normal row for everything else
                   item.entity_type === "post_batch" ? (
                     <DigestCard key={item.id} item={item} onRead={() => markRead(item)} />
                   ) : (
