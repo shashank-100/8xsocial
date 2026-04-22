@@ -205,10 +205,8 @@ export function SupportChat({ onClose, conversationId: initialConversationId, ti
         const data = JSON.parse(e.data)
         const dbMsgs = (data.messages ?? []) as { id: string; role: string; content: string; read_at: string | null }[]
         const visible = dbMsgs.filter((m) => m.role === "user" || m.role === "assistant" || m.role === "human")
-        setMessages([
-          { role: "assistant", content: GREETING },
-          ...visible.map((m) => ({ id: m.id, role: m.role as Message["role"], content: m.content, read_at: m.read_at })),
-        ])
+        const mapped = visible.map((m) => ({ id: m.id, role: m.role as Message["role"], content: m.content, read_at: m.read_at }))
+        setMessages(isSupport ? [{ role: "assistant", content: GREETING }, ...mapped] : mapped)
         if (visible.length > prevCountRef.current) {
           const last = visible[visible.length - 1]
           if (last?.role === "assistant" || last?.role === "human") {
