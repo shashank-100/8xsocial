@@ -31,7 +31,10 @@ async function fetchPaymentsAndPosts(creatorId: string) {
   }
 }
 
-export async function getContext(creatorId: string, campaignId?: string | null) {
+export async function getContext(creatorId: string, campaignId?: string | null): Promise<{
+  creator: any; campaign: any; campaigns: any; noCampaign?: boolean;
+  recentPayments: any[]; recentPosts: any[]; pendingBalance: number
+}> {
   const { data: creator, error: creatorError } = await supabaseAdmin
     .from("creators")
     .select("*")
