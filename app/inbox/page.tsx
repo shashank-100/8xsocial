@@ -98,7 +98,6 @@ export default function InboxPage() {
           )}
           {!loading && threads.length === 0 && (
             <div className="flex flex-col items-center justify-center h-40 gap-2 text-gray-400">
-              <span className="text-3xl">📭</span>
               <p className="text-sm">No messages yet</p>
             </div>
           )}
@@ -141,8 +140,7 @@ export default function InboxPage() {
 
 function EmptyState() {
   return (
-    <div className="flex-1 flex flex-col items-center justify-center gap-3 bg-gray-50 text-gray-400">
-      <span className="text-5xl">💬</span>
+    <div className="flex-1 flex flex-col items-center justify-center gap-2 bg-gray-50 text-gray-400">
       <p className="text-sm font-medium">Select a thread to view</p>
       <p className="text-xs text-gray-300">Your messages, payments, and campaign updates live here</p>
     </div>

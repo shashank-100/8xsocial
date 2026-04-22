@@ -50,14 +50,14 @@ export function timeAgo(iso: string): string {
 }
 
 export function itemIcon(item: InboxItem): string {
-  if (item.type === "support") return "💬"
-  if (item.type === "chat") return "💬"
-  if (item.entity_type === "payment") return "💰"
-  if (item.entity_type === "post") return "✅"
-  if (item.entity_type === "post_batch") return "🎯"
-  if (item.entity_type === "campaign") return "📋"
-  if (item.entity_type === "job") return "🎯"
-  return "📣"
+  if (item.type === "support") return "SU"
+  if (item.type === "chat") return (item.metadata?.brand_name as string ?? "BR").slice(0, 2).toUpperCase()
+  if (item.entity_type === "payment") return "$"
+  if (item.entity_type === "post") return "PO"
+  if (item.entity_type === "post_batch") return "PO"
+  if (item.entity_type === "campaign") return "CA"
+  if (item.entity_type === "job") return "JO"
+  return "—"
 }
 
 export function threadTitle(item: InboxItem): string {
@@ -159,7 +159,9 @@ export function DigestCard({ item, active, onRead }: { item: InboxItem; active?:
       }`}
       onClick={onRead}
     >
-      <span className="text-2xl shrink-0">{itemIcon(item)}</span>
+      <div className="w-8 h-8 rounded-full bg-gray-200 flex items-center justify-center text-xs font-bold text-gray-600 shrink-0">
+        {itemIcon(item)}
+      </div>
       <div className="flex-1 min-w-0">
         <p className={`text-sm ${!item.read_at ? "font-semibold text-gray-900" : "text-gray-600"}`}>
           {isDigest ? `${count} posts approved today` : (item.preview ?? "New notification")}
