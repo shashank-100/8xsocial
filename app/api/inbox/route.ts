@@ -25,7 +25,11 @@ export async function GET(req: Request) {
   const { data, error } = await query
   if (error) return Response.json({ error: error.message }, { status: 500 })
 
-  const unreadCount = data?.filter((i) => !i.read_at).length ?? 0
+  const { count } = await supabaseAdmin
+    .from("inbox_items")
+    .select("id", { count: "exact", head: true })
+    .eq("creator_id", creatorId)
+    .is("read_at", null)
 
-  return Response.json({ items: data ?? [], unreadCount })
+  return Response.json({ items: data ?? [], unreadCount: count ?? 0 })
 }
