@@ -168,8 +168,6 @@ interface Template {
 
 The `TemplateCtx` is a flat key-value map populated by the worker after fetching the relevant entities. Templates are code, not database rows. This is intentional: templates change with deploys, not data migrations. Previewing is done in tests — the functions are pure, so `template.preview({ creatorName: "Jordan", amount: 24000, videoCount: 3 })` works in any test runner.
 
-Localization: the model can generate responses in the creator's language (see Section 3). For system templates, we add a `locale` field to creators and branch in the template function. Not wired up yet — deferred until there's a non-English creator base large enough to justify the QA overhead.
-
 ---
 
 ## 3. FAQ / Support Bot
@@ -488,8 +486,6 @@ One week. The goal isn't feature completeness — it's eliminating the three hig
 **Human support dashboard** — Slack handles current escalation volume. A proper dashboard with agent assignment, conversation routing, and SLA tracking becomes necessary around 1,000 escalations/day. The `conversations.mode` and `escalated` columns are already the right data model for it — this is a UI build, not a schema redesign.
 
 **Push notifications** — `warmup.reminder` and `viral.alert` already land in the inbox as in-app notifications (shipped). Push (FCM/APNs) would add a second delivery channel on top — faster, works with the screen off — but requires a mobile app. That second channel is deferred; the in-app inbox delivery is live.
-
-**Localization** — Template functions have a `locale` branch point ready. Not wired up until there's a non-English creator segment large enough to justify the QA overhead.
 
 ---
 
