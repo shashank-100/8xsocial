@@ -125,8 +125,8 @@ export default function InboxPage() {
       <main className="flex-1 flex flex-col min-w-0">
         {!activeGroup ? (
           <EmptyState />
-        ) : activeGroup.type === "support" ? (
-          <SupportChat />
+        ) : activeGroup.type === "support" || activeGroup.type === "chat" ? (
+          <SupportChat key={activeGroup.key} conversationId={activeGroup.item.thread_id ?? undefined} title={activeGroup.title} readonly={activeGroup.type === "chat"} />
         ) : activeGroup.type === "system" || activeGroup.item.entity_type ? (
           <DetailScreen item={activeGroup.item} />
         ) : (

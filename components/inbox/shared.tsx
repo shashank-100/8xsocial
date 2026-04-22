@@ -177,13 +177,14 @@ export function DigestCard({ item, active, onRead }: { item: InboxItem; active?:
 
 // ─── SupportChat ──────────────────────────────────────────────────────────────
 
-export function SupportChat({ onClose }: { onClose?: () => void }) {
+export function SupportChat({ onClose, conversationId: initialConversationId, title, readonly }: { onClose?: () => void; conversationId?: string; title?: string; readonly?: boolean }) {
   const GREETING = "Hey! I'm 8x Support. Ask me anything about your campaign, pay, or posting schedule."
-  const [messages, setMessages] = useState<Message[]>([{ role: "assistant", content: GREETING }])
+  const isSupport = !readonly
+  const [messages, setMessages] = useState<Message[]>(isSupport ? [{ role: "assistant", content: GREETING }] : [])
   const [input, setInput] = useState("")
   const [loading, setLoading] = useState(false)
   const [isTyping, setIsTyping] = useState(false)
-  const [conversationId, setConversationId] = useState<string | null>(null)
+  const [conversationId, setConversationId] = useState<string | null>(initialConversationId ?? null)
   const bottomRef = useRef<HTMLDivElement>(null)
   const prevCountRef = useRef(0)
   const esRef = useRef<EventSource | null>(null)
@@ -285,11 +286,13 @@ export function SupportChat({ onClose }: { onClose?: () => void }) {
             <span className="text-white text-xs font-bold">8x</span>
           </div>
           <div>
-            <p className="text-sm font-semibold text-gray-900">8x Support</p>
-            <div className="flex items-center gap-1">
-              <span className="w-1.5 h-1.5 rounded-full bg-green-500 inline-block" />
-              <p className="text-xs text-gray-400">Online</p>
-            </div>
+            <p className="text-sm font-semibold text-gray-900">{title ?? "8x Support"}</p>
+            {isSupport && (
+              <div className="flex items-center gap-1">
+                <span className="w-1.5 h-1.5 rounded-full bg-green-500 inline-block" />
+                <p className="text-xs text-gray-400">Online</p>
+              </div>
+            )}
           </div>
         </div>
         {onClose && (
@@ -333,27 +336,29 @@ export function SupportChat({ onClose }: { onClose?: () => void }) {
         <div ref={bottomRef} />
       </div>
 
-      <div className="px-3 py-3 border-t border-gray-100 bg-white shrink-0">
-        <div className="flex gap-2 items-center">
-          <input
-            className="flex-1 px-4 py-2 rounded-full border border-gray-200 bg-gray-50 text-sm text-gray-900 outline-none focus:border-black focus:bg-white transition-colors placeholder:text-gray-400"
-            placeholder="Ask me anything..."
-            value={input}
-            onChange={(e) => handleInputChange(e.target.value)}
-            onKeyDown={(e) => e.key === "Enter" && sendMessage()}
-            disabled={loading}
-          />
-          <button
-            onClick={sendMessage}
-            disabled={loading || !input.trim()}
-            className="w-9 h-9 rounded-full bg-black flex items-center justify-center disabled:opacity-30 shrink-0 hover:bg-gray-800 transition-colors"
-          >
-            <svg className="w-4 h-4 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 12h14M12 5l7 7-7 7" />
-            </svg>
-          </button>
+      {!readonly && (
+        <div className="px-3 py-3 border-t border-gray-100 bg-white shrink-0">
+          <div className="flex gap-2 items-center">
+            <input
+              className="flex-1 px-4 py-2 rounded-full border border-gray-200 bg-gray-50 text-sm text-gray-900 outline-none focus:border-black focus:bg-white transition-colors placeholder:text-gray-400"
+              placeholder="Ask me anything..."
+              value={input}
+              onChange={(e) => handleInputChange(e.target.value)}
+              onKeyDown={(e) => e.key === "Enter" && sendMessage()}
+              disabled={loading}
+            />
+            <button
+              onClick={sendMessage}
+              disabled={loading || !input.trim()}
+              className="w-9 h-9 rounded-full bg-black flex items-center justify-center disabled:opacity-30 shrink-0 hover:bg-gray-800 transition-colors"
+            >
+              <svg className="w-4 h-4 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 12h14M12 5l7 7-7 7" />
+              </svg>
+            </button>
+          </div>
         </div>
-      </div>
+      )}
     </div>
   )
 }
