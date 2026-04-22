@@ -381,7 +381,7 @@ export function DetailScreen({ item, onBack }: { item: InboxItem; onBack?: () =>
         <p className="text-sm font-semibold text-gray-900">{label}</p>
       </div>
       <div className="flex-1 flex flex-col items-center justify-center px-6 gap-4 bg-gray-50">
-        <span className="text-6xl">{itemIcon(item)}</span>
+        <div className="w-12 h-12 rounded-full bg-gray-200 text-gray-500 flex items-center justify-center"><ItemIcon item={item} /></div>
         <p className="text-lg font-semibold text-gray-900 text-center leading-snug">
           {item.entity_type === "post_batch" && count && count > 1
             ? `${count} posts approved today`
