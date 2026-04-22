@@ -487,7 +487,7 @@ One week. The goal isn't feature completeness — it's eliminating the three hig
 
 **Human support dashboard** — Slack handles current escalation volume. A proper dashboard with agent assignment, conversation routing, and SLA tracking becomes necessary around 1,000 escalations/day. The `conversations.mode` and `escalated` columns are already the right data model for it — this is a UI build, not a schema redesign.
 
-**Push notifications** — `warmup.reminder` and `viral.alert` are better served by push (cheaper, faster, no quiet-hours complexity for in-app). Deferred until there's a mobile app to push to.
+**Push notifications** — `warmup.reminder` and `viral.alert` already land in the inbox as in-app notifications (shipped). Push (FCM/APNs) would add a second delivery channel on top — faster, works with the screen off — but requires a mobile app. That second channel is deferred; the in-app inbox delivery is live.
 
 **Localization** — Template functions have a `locale` branch point ready. Not wired up until there's a non-English creator segment large enough to justify the QA overhead.
 
