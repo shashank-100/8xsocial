@@ -4,6 +4,31 @@ import { getContext } from "@/lib/bot/context"
 import { callLLM } from "@/lib/bot/llm"
 import { sendSlackAlert } from "@/lib/bot/slack"
 import { logResponse } from "@/lib/bot/log"
+import { supabaseAdmin } from "@/lib/supabase/admin"
+
+async function upsertSupportInboxItem(creatorId: string, conversationId: string, preview: string) {
+  const { data: existing } = await supabaseAdmin
+    .from("inbox_items")
+    .select("id")
+    .eq("creator_id", creatorId)
+    .eq("thread_id", conversationId)
+    .eq("type", "support")
+    .maybeSingle()
+
+  if (existing) {
+    await supabaseAdmin
+      .from("inbox_items")
+      .update({ preview, read_at: null })
+      .eq("id", existing.id)
+  } else {
+    await supabaseAdmin.from("inbox_items").insert({
+      creator_id: creatorId,
+      type: "support",
+      thread_id: conversationId,
+      preview,
+    })
+  }
+}
 
 async function handleResult(
   result: { intent: string; response: string },
@@ -27,6 +52,7 @@ async function handleResult(
   }
   const reply = result.response || "I'm connecting you with the team right away — someone will follow up shortly."
   await saveMessage(conversation.id, "assistant", reply)
+  await upsertSupportInboxItem(creatorId, conversation.id, reply.slice(0, 120))
   await logResponse(creatorId, message, reply, result.intent === "ESCALATE")
 }
 
@@ -82,6 +108,7 @@ export async function POST(req: Request) {
         await tagEscalated(conversation.id, slackTs)
         const reply = "Hey! I'll connect you with the team — someone will follow up shortly."
         await saveMessage(conversation.id, "assistant", reply)
+        await upsertSupportInboxItem(creatorId, conversation.id, reply)
         await logResponse(creatorId, message, reply, true)
         return
       }
