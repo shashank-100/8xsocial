@@ -30,16 +30,37 @@ export async function sendSlackAlert(
     },
     body: JSON.stringify({
       channel: channelId,
-      text: [
-        `:rotating_light: *Escalation — ${name} needs human support*`,
-        `*Campaign:* ${ctx.campaignName}`,
-        `*Message:* "${message}"`,
-        ``,
-        `*Creator snapshot:*`,
-        `• Pay: ${ctx.payInfo ?? "not set"} | Bank connected: ${ctx.bankConnected ? "yes" : "no"}`,
-        ``,
-        `↩ *Reply in this thread* — your reply will appear in the creator's chat`,
-      ].join("\n"),
+      text: `:rotating_light: *Escalation — ${name} needs human support*`,
+      blocks: [
+        {
+          type: "section",
+          text: {
+            type: "mrkdwn",
+            text: [
+              `:rotating_light: *Escalation — ${name} needs human support*`,
+              `*Campaign:* ${ctx.campaignName}`,
+              `*Message:* "${message}"`,
+              ``,
+              `*Creator snapshot:*`,
+              `• Pay: ${ctx.payInfo ?? "not set"} | Bank connected: ${ctx.bankConnected ? "yes" : "no"}`,
+              ``,
+              `↩ *Reply in this thread* — your reply will appear in the creator's chat`,
+            ].join("\n"),
+          },
+        },
+        {
+          type: "actions",
+          elements: [
+            {
+              type: "button",
+              text: { type: "plain_text", text: "✅ Close Ticket" },
+              style: "primary",
+              action_id: "close_ticket",
+              value: ctx.conversationId,
+            },
+          ],
+        },
+      ],
     }),
   })
 

@@ -256,22 +256,35 @@ The model does not say "your pay rate hasn't been set" — it silently escalates
 
 ### Queries that run before the bot responds
 
+**Synchronous — before 202 is returned:**
 ```sql
--- 1. Fetch creator
-SELECT * FROM creators WHERE id = $creatorId;
-
--- 2. Fetch their campaign
-SELECT * FROM campaigns WHERE id = $creator.campaign_id;
-
--- 3. Find or create conversation
+-- Find or create conversation
 SELECT * FROM conversations WHERE id = $conversationId;
--- or INSERT INTO conversations (creator_id, status, escalated) VALUES (...)
+INSERT INTO conversations (creator_id, status, escalated) VALUES (...);
 
--- 4. Save user message
+-- Save user message immediately
 INSERT INTO messages (conversation_id, role, content) VALUES (...);
 ```
 
-Queries 1 and 2 run in the `after()` background task. Queries 3 and 4 run synchronously before the 202 response — they're fast indexed lookups.
+**Background — inside after():**
+```sql
+-- Fetch creator
+SELECT * FROM creators WHERE id = $creatorId;
+
+-- Fetch all active campaigns for this creator
+SELECT campaign_id FROM creator_campaigns WHERE creator_id = $1 AND active = true;
+
+-- Fetch specific campaign (pinned or resolved)
+SELECT * FROM campaigns WHERE id = $campaignId;
+
+-- Fetch conversation history (last 5 user/assistant messages for LLM context)
+SELECT role, content FROM messages
+WHERE conversation_id = $1
+AND role IN ('user', 'assistant')
+ORDER BY created_at ASC LIMIT 5;
+```
+
+Synchronous queries are fast indexed lookups — they complete before the 202 is sent. Background queries run after the response, so LLM latency never blocks the creator.
 
 ### Schema changes from the assignment baseline
 
@@ -281,10 +294,13 @@ The assignment provided a simplified data model. The implementation adds:
 |---|---|---|
 | `conversations` | `status TEXT` (`open/resolved/escalated`) | Enables human handoff filtering |
 | `conversations` | `escalated BOOLEAN` | Fast flag for support team dashboards |
-| `messages` | `role TEXT` (`user/assistant`) | Replaces `sender_id` + `is_system_message` with simpler role model |
+| `conversations` | `campaign_id FK` | Pins conversation to a specific campaign |
+| `conversations` | `slack_thread_ts TEXT` | Maps Slack thread replies back to conversation |
+| `messages` | `role TEXT` (`user/assistant/human`) | Bot vs human agent vs creator |
+| *(new)* | `creator_campaigns` join table | Multi-campaign support |
 | *(new)* | `bot_logs` table | Observability — every bot response logged for review |
 
-The `messages` table simplifies the original schema: instead of `sender_id` (FK to users) + `is_system_message` boolean, we use a `role` enum (`user` / `assistant`). This is cleaner for a bot-centric message model and easier to query for review.
+The `messages` table simplifies the original schema: instead of `sender_id` (FK to users) + `is_system_message` boolean, we use a `role` enum (`user` / `assistant` / `human`). This is cleaner for a bot-centric message model and correctly distinguishes bot replies from human agent replies.
 
 ### API route design
 
@@ -324,7 +340,7 @@ These rules are absolute — the model has no discretion. This is intentional: f
 
 When `intent === "ESCALATE"`:
 
-1. `sendSlackAlert()` posts to the support team's Slack channel via incoming webhook
+1. `sendSlackAlert()` posts to the support team's Slack channel via `chat.postMessage`
 2. The message includes: creator name, campaign, the exact message they sent, pay info snapshot, bank connection status, and a direct link to the conversation
 3. `tagEscalated()` updates the conversation: `status = 'escalated'`, `escalated = true`
 4. The bot's reply to the creator is a warm handoff message ("I'm connecting you with the team")
@@ -351,7 +367,7 @@ Human handoff works entirely through Slack — no separate dashboard needed.
 
 4. Slack Events API fires → POST /api/slack/events
    → look up conversation by slack_thread_ts
-   → saveMessage({ role: "assistant", content: "Hi Jordan..." })
+   → saveMessage({ role: "human", content: "Hi Jordan..." })
 
 5. Creator sees the reply in their chat UI via polling
    — they never know it came from Slack
@@ -389,7 +405,7 @@ The conversation stays in one place (the DB). Slack is just the human's interfac
 ### Edge cases
 
 **Creator on multiple campaigns**
-Currently unsupported at the schema level. Workaround: the `campaign_id` FK on creators represents their primary/active campaign. If multi-campaign is needed, add a `creator_campaigns` join table and have the bot ask which campaign they're asking about if ambiguous.
+Fully implemented via `creator_campaigns` join table. Bot detects multiple active campaigns, asks which one in-chat, pins the answer to the conversation, and uses it for all subsequent messages. Never asks again after the first reply.
 
 **Bot gives a wrong answer**
 The `bot_logs` table captures every message + response + escalation flag. The support team can review logs sorted by `escalated = false` to audit bot answers. A thumbs-down feedback mechanism on the conversation UI would surface specific bad answers. Corrected answers can be used to tighten the system prompt rules.

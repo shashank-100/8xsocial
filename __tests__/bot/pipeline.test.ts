@@ -54,6 +54,9 @@ const mockContext = {
     posting_frequency: "2x per week",
     platforms: ["TikTok", "Instagram"],
   },
+  recentPayments: [],
+  recentPosts: [],
+  pendingBalance: 0,
 }
 
 function makePostRequest(body: object) {
@@ -122,6 +125,9 @@ describe("POST /api/messages", () => {
       ...mockContext,
       creator: { ...mockContext.creator, pay_rate: null },
       campaigns: null,
+      recentPayments: [],
+      recentPosts: [],
+      pendingBalance: 0,
     })
     vi.mocked(callLLM).mockResolvedValue({ intent: "DATA", response: "I'll connect you with support." })
 

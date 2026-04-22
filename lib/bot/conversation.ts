@@ -50,6 +50,28 @@ export async function saveMessage(
   return data
 }
 
+export async function saveHumanMessageWithInboxItem(
+  conversationId: string,
+  creatorId: string,
+  content: string,
+  senderLabel: string
+) {
+  const msg = await saveMessage(conversationId, "human", content)
+
+  // Write inbox_items row so brand/staff messages appear in creator's unified inbox
+  await supabaseAdmin.from("inbox_items").insert({
+    creator_id: creatorId,
+    type: "chat",
+    thread_id: conversationId,
+    preview: `${senderLabel}: ${content.slice(0, 100)}`,
+    entity_type: null,
+    entity_id: null,
+    metadata: { conversation_id: conversationId, sender: senderLabel },
+  })
+
+  return msg
+}
+
 export async function tagEscalated(conversationId: string, slackThreadTs?: string | null) {
   const { error } = await supabaseAdmin
     .from("conversations")
@@ -61,6 +83,15 @@ export async function tagEscalated(conversationId: string, slackThreadTs?: strin
     .eq("id", conversationId)
 
   if (error) throw new Error(`Failed to tag escalated: ${error.message}`)
+}
+
+export async function resolveConversation(conversationId: string) {
+  const { error } = await supabaseAdmin
+    .from("conversations")
+    .update({ status: "resolved", escalated: false })
+    .eq("id", conversationId)
+
+  if (error) throw new Error(`Failed to resolve conversation: ${error.message}`)
 }
 
 export async function findConversationBySlackThread(threadTs: string) {
@@ -90,9 +121,9 @@ export async function getHistory(conversationId: string) {
     .select("role, content")
     .eq("conversation_id", conversationId)
     .in("role", ["user", "assistant"]) // exclude human agent messages from LLM context
-    .order("created_at", { ascending: true })
+    .order("created_at", { ascending: false })
     .limit(5) // cap to last 5 messages to control token cost
 
   if (error) throw new Error(`Failed to fetch history: ${error.message}`)
-  return (data ?? []) as { role: "user" | "assistant"; content: string }[]
+  return ((data ?? []) as { role: "user" | "assistant"; content: string }[]).reverse()
 }

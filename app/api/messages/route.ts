@@ -66,6 +66,22 @@ export async function POST(req: Request) {
 
       let context = await getContext(creatorId, conversation.campaign_id ?? null)
 
+      // No active campaign — escalate immediately rather than calling LLM with null campaign
+      if (context.noCampaign) {
+        const slackTs = await sendSlackAlert(creatorId, message, {
+          creatorName: context.creator.name,
+          campaignName: "Unknown",
+          payInfo: null,
+          bankConnected: context.creator.bank_connected,
+          conversationId: conversation.id,
+        })
+        await tagEscalated(conversation.id, slackTs)
+        const reply = "Hey! I'll connect you with the team — someone will follow up shortly."
+        await saveMessage(conversation.id, "assistant", reply)
+        await logResponse(creatorId, message, reply, true)
+        return
+      }
+
       // Multiple campaigns, no campaign pinned yet — check if creator is picking one
       if (context.campaigns) {
         const campaigns = context.campaigns as { id: string; brand_name: string }[]
@@ -83,7 +99,13 @@ export async function POST(req: Request) {
           )
           const questionToAnswer = originalQuestion?.content ?? message
           const result = await callLLM(
-            { creator: context.creator, campaign: context.campaign! },
+            {
+              creator: context.creator,
+              campaign: context.campaign!,
+              recentPayments: context.recentPayments,
+              recentPosts: context.recentPosts,
+              pendingBalance: context.pendingBalance,
+            },
             questionToAnswer,
             history
           )
@@ -94,7 +116,13 @@ export async function POST(req: Request) {
         // Call LLM with first campaign as fallback — it can answer creator-level + ESCALATE/GENERAL without campaign
         const history = await getHistory(conversation.id)
         const result = await callLLM(
-          { creator: context.creator, campaign: campaigns[0] as never },
+          {
+            creator: context.creator,
+            campaign: campaigns[0] as never,
+            recentPayments: context.recentPayments,
+            recentPosts: context.recentPosts,
+            pendingBalance: context.pendingBalance,
+          },
           message,
           history
         )
@@ -115,7 +143,13 @@ export async function POST(req: Request) {
 
       const history = await getHistory(conversation.id)
       const result = await callLLM(
-        { creator: context.creator, campaign: context.campaign! },
+        {
+          creator: context.creator,
+          campaign: context.campaign!,
+          recentPayments: context.recentPayments,
+          recentPosts: context.recentPosts,
+          pendingBalance: context.pendingBalance,
+        },
         message,
         history
       )

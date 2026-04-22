@@ -1,5 +1,5 @@
 import { createHmac } from "crypto"
-import { findConversationBySlackThread, saveMessage } from "@/lib/bot/conversation"
+import { findConversationBySlackThread, saveHumanMessageWithInboxItem } from "@/lib/bot/conversation"
 
 function verifySlackSignature(req: Request, body: string): boolean {
   const secret = process.env.SLACK_SIGNING_SECRET?.trim()
@@ -18,7 +18,15 @@ function verifySlackSignature(req: Request, body: string): boolean {
 
 export async function POST(req: Request) {
   const body = await req.text()
-  const payload = JSON.parse(body)
+
+  // Block actions come as form-encoded: payload={"type":"block_actions",...}
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  let payload: any
+  if (body.startsWith("payload=")) {
+    payload = JSON.parse(decodeURIComponent(body.slice("payload=".length)))
+  } else {
+    payload = JSON.parse(body)
+  }
 
   // Slack URL verification challenge — respond before signature check
   if (payload.type === "url_verification") {
@@ -32,6 +40,11 @@ export async function POST(req: Request) {
 
   if (!verifySlackSignature(req, body)) {
     return Response.json({ error: "invalid signature" }, { status: 401 })
+  }
+
+  // block_actions (button clicks) are handled by /api/slack/interactions — ignore here
+  if (payload.type === "block_actions") {
+    return Response.json({ ok: true })
   }
 
   const event = payload.event
@@ -63,8 +76,8 @@ export async function POST(req: Request) {
   console.log("[slack] conversation lookup:", conversation?.id ?? "NOT FOUND", "thread_ts:", event.thread_ts)
   if (!conversation) return Response.json({ ok: true })
 
-  // Save as "human" — distinct from "assistant" (bot) and "user" (creator)
-  await saveMessage(conversation.id, "human", event.text)
+  // Save as "human" and write inbox_items row for creator's unified inbox
+  await saveHumanMessageWithInboxItem(conversation.id, conversation.creator_id, event.text, "8x Support")
   console.log("[slack] saved human message to conversation:", conversation.id)
 
   return Response.json({ ok: true })
