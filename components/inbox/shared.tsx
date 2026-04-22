@@ -2,6 +2,10 @@
 
 import { useState, useRef, useEffect } from "react"
 import { createClient } from "@/utils/supabase/client"
+import {
+  Headphones, MessageCircle, Wallet, CheckCircle, Layers,
+  ClipboardList, Briefcase, Bell,
+} from "lucide-react"
 
 export const CREATOR_ID = "00000000-0000-0000-0000-000000000002"
 
@@ -49,15 +53,16 @@ export function timeAgo(iso: string): string {
   return `${Math.floor(hrs / 24)}d ago`
 }
 
-export function itemIcon(item: InboxItem): string {
-  if (item.type === "support") return "SU"
-  if (item.type === "chat") return (item.metadata?.brand_name as string ?? "BR").slice(0, 2).toUpperCase()
-  if (item.entity_type === "payment") return "$"
-  if (item.entity_type === "post") return "PO"
-  if (item.entity_type === "post_batch") return "PO"
-  if (item.entity_type === "campaign") return "CA"
-  if (item.entity_type === "job") return "JO"
-  return "—"
+export function ItemIcon({ item }: { item: InboxItem }) {
+  const cls = "w-4 h-4"
+  if (item.type === "support") return <Headphones className={cls} />
+  if (item.type === "chat") return <MessageCircle className={cls} />
+  if (item.entity_type === "payment") return <Wallet className={cls} />
+  if (item.entity_type === "post") return <CheckCircle className={cls} />
+  if (item.entity_type === "post_batch") return <Layers className={cls} />
+  if (item.entity_type === "campaign") return <ClipboardList className={cls} />
+  if (item.entity_type === "job") return <Briefcase className={cls} />
+  return <Bell className={cls} />
 }
 
 export function threadTitle(item: InboxItem): string {
@@ -81,7 +86,7 @@ export function groupIntoThreads(items: InboxItem[]): ThreadGroup[] {
         key,
         type: item.type,
         title: threadTitle(item),
-        icon: itemIcon(item),
+        icon: "",
         preview: item.preview ?? "New message",
         time: item.created_at,
         unread: item.read_at ? 0 : 1,
@@ -118,13 +123,10 @@ export function InboxRow({
         active ? "bg-blue-50" : "hover:bg-gray-50"
       }`}
     >
-      <div className={`w-10 h-10 rounded-full shrink-0 flex items-center justify-center text-lg ${
-        isChat ? "bg-gray-900 text-white" : "bg-gray-100"
+      <div className={`w-10 h-10 rounded-full shrink-0 flex items-center justify-center ${
+        isChat ? "bg-gray-900 text-white" : "bg-gray-100 text-gray-500"
       }`}>
-        {isChat
-          ? <span className="text-xs font-bold">{group.title.slice(0, 2).toUpperCase()}</span>
-          : <span>{group.icon}</span>
-        }
+        <ItemIcon item={group.item} />
       </div>
       <div className="flex-1 min-w-0">
         <div className="flex items-center justify-between gap-2">
@@ -159,8 +161,8 @@ export function DigestCard({ item, active, onRead }: { item: InboxItem; active?:
       }`}
       onClick={onRead}
     >
-      <div className="w-8 h-8 rounded-full bg-gray-200 flex items-center justify-center text-xs font-bold text-gray-600 shrink-0">
-        {itemIcon(item)}
+      <div className="w-8 h-8 rounded-full bg-gray-100 text-gray-500 flex items-center justify-center shrink-0">
+        <ItemIcon item={item} />
       </div>
       <div className="flex-1 min-w-0">
         <p className={`text-sm ${!item.read_at ? "font-semibold text-gray-900" : "text-gray-600"}`}>
