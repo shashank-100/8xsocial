@@ -71,7 +71,7 @@ export async function getContext(creatorId: string, campaignId?: string | null) 
   }
 
   if (campaignIds.length === 0) {
-    throw new Error(`No active campaign found for creator: ${creatorId}`)
+    return { creator, campaign: null, campaigns: null, noCampaign: true, ...extras }
   }
 
   const { data: campaignRows } = await supabaseAdmin
@@ -83,7 +83,7 @@ export async function getContext(creatorId: string, campaignId?: string | null) 
   const activeCampaigns = campaignRows ?? []
 
   if (activeCampaigns.length === 0) {
-    throw new Error(`No active campaign found for creator: ${creatorId}`)
+    return { creator, campaign: null, campaigns: null, noCampaign: true, ...extras }
   }
 
   // Single campaign — no ambiguity

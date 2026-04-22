@@ -66,6 +66,22 @@ export async function POST(req: Request) {
 
       let context = await getContext(creatorId, conversation.campaign_id ?? null)
 
+      // No active campaign — escalate immediately rather than calling LLM with null campaign
+      if (context.noCampaign) {
+        const slackTs = await sendSlackAlert(creatorId, message, {
+          creatorName: context.creator.name,
+          campaignName: "Unknown",
+          payInfo: null,
+          bankConnected: context.creator.bank_connected,
+          conversationId: conversation.id,
+        })
+        await tagEscalated(conversation.id, slackTs)
+        const reply = "Hey! I'll connect you with the team — someone will follow up shortly."
+        await saveMessage(conversation.id, "assistant", reply)
+        await logResponse(creatorId, message, reply, true)
+        return
+      }
+
       // Multiple campaigns, no campaign pinned yet — check if creator is picking one
       if (context.campaigns) {
         const campaigns = context.campaigns as { id: string; brand_name: string }[]

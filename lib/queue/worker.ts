@@ -1,17 +1,17 @@
 import { Worker, type Job } from "bullmq"
 import { Redis } from "ioredis"
 import { supabaseAdmin } from "@/lib/supabase/admin"
-import { dispatchInApp, dispatchEmail, dispatchSms } from "@/lib/dispatch/dispatch"
+import { dispatchInApp, dispatchEmail, dispatchSms, claimDispatch, markDispatched, markFailed } from "@/lib/dispatch/dispatch"
 import type { TemplateCtx } from "@/lib/templates"
 
 async function fetchCreator(creatorId: string) {
   const { data, error } = await supabaseAdmin
     .from("creators")
-    .select("id, name, email, warmup_day, campaign_id")
+    .select("id, name, email, warmup_day, timezone")
     .eq("id", creatorId)
     .single()
   if (error || !data) throw new Error(`Creator not found: ${creatorId}`)
-  return data as { id: string; name: string | null; email: string; warmup_day: number | null; campaign_id: string | null }
+  return data as { id: string; name: string | null; email: string; warmup_day: number | null; timezone: string | null }
 }
 
 async function processJob(job: Job) {
@@ -74,10 +74,52 @@ async function processJob(job: Job) {
 
     case "event/post.approved": {
       const { postId, creatorId, platform } = data
-      const creator = await fetchCreator(creatorId)
-      const date = new Date().toISOString().slice(0, 10)
-      const ctx: TemplateCtx = { creatorName: creator.name ?? "Creator", creatorEmail: creator.email, platform }
-      await dispatchInApp({ creatorId, eventType: "post.approved", sourceId: `${creatorId}:approved:${date}`, ctx, entityType: "post", entityId: postId })
+      const key = `post.approved:${postId}:in-app`
+      const claimed = await claimDispatch(key)
+      if (!claimed) break
+
+      try {
+        const creator = await fetchCreator(creatorId)
+        // Use creator's local timezone so the digest groups by their calendar day, not UTC
+        const tz = creator.timezone ?? "UTC"
+        const nowInTz = new Date(new Date().toLocaleString("en-US", { timeZone: tz }))
+        nowInTz.setHours(0, 0, 0, 0)
+        const startOfDay = new Date(nowInTz.getTime() - new Date().getTimezoneOffset() * 60000)
+
+        // Check for an existing unread post_batch inbox item today — update it instead of inserting
+        const { data: existing } = await supabaseAdmin
+          .from("inbox_items")
+          .select("id, metadata")
+          .eq("creator_id", creatorId)
+          .eq("entity_type", "post_batch")
+          .is("read_at", null)
+          .gte("created_at", startOfDay.toISOString())
+          .maybeSingle()
+
+        if (existing) {
+          const count = ((existing.metadata as Record<string, unknown>)?.count as number ?? 1) + 1
+          await supabaseAdmin
+            .from("inbox_items")
+            .update({
+              preview: `${count} posts approved today`,
+              metadata: { ...(existing.metadata as object), count },
+            })
+            .eq("id", existing.id)
+        } else {
+          await supabaseAdmin.from("inbox_items").insert({
+            creator_id: creatorId,
+            type: "system",
+            preview: `Your ${platform} post was approved`,
+            entity_type: "post_batch",
+            entity_id: postId,
+            metadata: { idempotency_key: key, event_type: "post.approved", source_id: postId, count: 1 },
+          })
+        }
+        await markDispatched(key)
+      } catch (err) {
+        await markFailed(key)
+        throw err
+      }
       break
     }
 

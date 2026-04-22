@@ -1,5 +1,5 @@
 import { createHmac } from "crypto"
-import { findConversationBySlackThread, saveHumanMessageWithInboxItem, resolveConversation } from "@/lib/bot/conversation"
+import { findConversationBySlackThread, saveHumanMessageWithInboxItem } from "@/lib/bot/conversation"
 
 function verifySlackSignature(req: Request, body: string): boolean {
   const secret = process.env.SLACK_SIGNING_SECRET?.trim()
@@ -42,13 +42,8 @@ export async function POST(req: Request) {
     return Response.json({ error: "invalid signature" }, { status: 401 })
   }
 
-  // Handle Close Ticket button click
+  // block_actions (button clicks) are handled by /api/slack/interactions — ignore here
   if (payload.type === "block_actions") {
-    const actions = payload.actions as { action_id: string; value: string }[]
-    const closeAction = actions?.find((a) => a.action_id === "close_ticket")
-    if (closeAction) {
-      await resolveConversation(closeAction.value)
-    }
     return Response.json({ ok: true })
   }
 

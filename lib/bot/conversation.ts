@@ -121,9 +121,9 @@ export async function getHistory(conversationId: string) {
     .select("role, content")
     .eq("conversation_id", conversationId)
     .in("role", ["user", "assistant"]) // exclude human agent messages from LLM context
-    .order("created_at", { ascending: true })
+    .order("created_at", { ascending: false })
     .limit(5) // cap to last 5 messages to control token cost
 
   if (error) throw new Error(`Failed to fetch history: ${error.message}`)
-  return (data ?? []) as { role: "user" | "assistant"; content: string }[]
+  return ((data ?? []) as { role: "user" | "assistant"; content: string }[]).reverse()
 }

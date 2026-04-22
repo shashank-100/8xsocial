@@ -62,16 +62,26 @@ export async function dispatchInApp({
   const safeEntityId = entityId && UUID_RE.test(entityId) ? entityId : null
 
   try {
-    const { error: insertError } = await supabaseAdmin.from("inbox_items").insert({
-      creator_id: creatorId,
-      type: "system",
-      thread_id: threadId ?? null,
-      preview: template.preview(ctx),
-      entity_type: entityType ?? null,
-      entity_id: safeEntityId,
-      metadata: { idempotency_key: key, event_type: eventType, source_id: sourceId },
-    })
+    const { data: inserted, error: insertError } = await supabaseAdmin
+      .from("inbox_items")
+      .insert({
+        creator_id: creatorId,
+        type: "system",
+        thread_id: threadId ?? null,
+        preview: template.preview(ctx),
+        entity_type: entityType ?? null,
+        entity_id: safeEntityId,
+        metadata: { idempotency_key: key, event_type: eventType, source_id: sourceId },
+      })
+      .select("*")
+      .single()
     if (insertError) throw new Error(insertError.message)
+
+    // Broadcast to per-creator channel — client receives the item instantly without polling
+    await supabaseAdmin
+      .channel(`inbox:${creatorId}`)
+      .send({ type: "broadcast", event: "new_item", payload: inserted })
+
     await markDispatched(key)
   } catch (err) {
     await markFailed(key)
@@ -200,3 +210,4 @@ export async function dispatchSms({
     throw err
   }
 }
+
