@@ -34,6 +34,10 @@ async function handleResult(
 export async function POST(req: Request) {
   const { creatorId, message, conversationId } = await req.json()
 
+  if (!creatorId || !message) {
+    return Response.json({ error: "creatorId and message are required" }, { status: 400 })
+  }
+
   // 1. Find or create conversation
   const conversation = await findOrCreateConversation(creatorId, conversationId)
 

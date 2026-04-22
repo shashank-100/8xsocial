@@ -244,7 +244,7 @@ WHERE created_at > now() - interval '7 days'
 GROUP BY escalated;
 ```
 
-**2. Thumbs-down rate** — after every DATA or GENERAL reply, the creator sees thumbs up/down. `helpful = false` on the `bot_logs` row. This is the direct signal for which answers need the system prompt tightened.
+**2. Thumbs-down rate** — after every DATA or GENERAL reply, the creator sees thumbs up/down. The client calls `PATCH /api/bot-logs/{id}/feedback` which sets `helpful = false` on the `bot_logs` row. This is the direct signal for which answers need the system prompt tightened. The feedback endpoint is the next thing to wire up — the data model is already in place.
 
 **3. Spot audit** — periodic review of `escalated = false` bot answers. This catches systematic errors the thumbs-down doesn't surface (creators who don't bother rating, or are satisfied with a wrong answer but act on it incorrectly).
 
