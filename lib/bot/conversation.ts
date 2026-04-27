@@ -1,5 +1,14 @@
 import { supabaseAdmin } from "@/lib/supabase/admin"
 
+async function broadcastMessage(conversationId: string, message: Record<string, unknown>) {
+  try {
+    await supabaseAdmin.channel(`conversation:${conversationId}`)
+      .send({ type: "broadcast", event: "new_message", payload: message })
+  } catch {
+    // broadcast is best-effort — message is already saved to DB
+  }
+}
+
 export type Role = "user" | "assistant" | "human"
 export type ConversationStatus = "open" | "resolved" | "escalated"
 
@@ -47,6 +56,7 @@ export async function saveMessage(
     .single()
 
   if (error) throw new Error(`Failed to save message: ${error.message}`)
+  await broadcastMessage(conversationId, data)
   return data
 }
 
@@ -54,19 +64,23 @@ export async function saveHumanMessageWithInboxItem(
   conversationId: string,
   creatorId: string,
   content: string,
-  senderLabel: string
+  senderLabel: string,
+  inboxType: "chat" | "support",
+  brandName?: string
 ) {
   const msg = await saveMessage(conversationId, "human", content)
 
-  // Write inbox_items row so brand/staff messages appear in creator's unified inbox
+  const metadata: Record<string, unknown> = { conversation_id: conversationId, sender: senderLabel }
+  if (brandName) metadata.brand_name = brandName
+
   await supabaseAdmin.from("inbox_items").insert({
     creator_id: creatorId,
-    type: "chat",
+    type: inboxType,
     thread_id: conversationId,
     preview: `${senderLabel}: ${content.slice(0, 100)}`,
     entity_type: null,
     entity_id: null,
-    metadata: { conversation_id: conversationId, sender: senderLabel },
+    metadata,
   })
 
   return msg

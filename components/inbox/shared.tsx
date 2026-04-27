@@ -79,7 +79,7 @@ export function threadTitle(item: InboxItem): string {
 export function groupIntoThreads(items: InboxItem[]): ThreadGroup[] {
   const map = new Map<string, ThreadGroup>()
   for (const item of items) {
-    const key = item.thread_id ?? item.id
+    const key = `${item.type}:${item.thread_id ?? item.id}`
     const existing = map.get(key)
     if (!existing) {
       map.set(key, {
@@ -177,17 +177,15 @@ export function DigestCard({ item, active, onRead }: { item: InboxItem; active?:
 
 // ─── SupportChat ──────────────────────────────────────────────────────────────
 
-export function SupportChat({ onClose, conversationId: initialConversationId, title, readonly }: { onClose?: () => void; conversationId?: string; title?: string; readonly?: boolean }) {
+export function SupportChat({ onClose, conversationId: initialConversationId, title, senderLabel }: { onClose?: () => void; conversationId?: string; title?: string; senderLabel?: string }) {
   const GREETING = "Hey! I'm 8x Support. Ask me anything about your campaign, pay, or posting schedule."
-  const isSupport = !readonly
+  const isSupport = !senderLabel
   const [messages, setMessages] = useState<Message[]>(isSupport ? [{ role: "assistant", content: GREETING }] : [])
   const [input, setInput] = useState("")
   const [loading, setLoading] = useState(false)
   const [isTyping, setIsTyping] = useState(false)
   const [conversationId, setConversationId] = useState<string | null>(initialConversationId ?? null)
   const bottomRef = useRef<HTMLDivElement>(null)
-  const prevCountRef = useRef(0)
-  const esRef = useRef<EventSource | null>(null)
   const typingTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const supabase = createClient()
 
@@ -195,29 +193,44 @@ export function SupportChat({ onClose, conversationId: initialConversationId, ti
     bottomRef.current?.scrollIntoView({ behavior: "smooth" })
   }, [messages, loading, isTyping])
 
+  // Load initial messages then subscribe to new ones via Supabase broadcast
   useEffect(() => {
     if (!conversationId) return
-    esRef.current?.close()
-    const es = new EventSource(`/api/messages/stream?conversationId=${conversationId}`)
-    esRef.current = es
-    es.onmessage = (e) => {
-      try {
-        const data = JSON.parse(e.data)
+
+    // Initial load
+    fetch(`/api/messages?conversationId=${conversationId}`)
+      .then((r) => r.json())
+      .then((data) => {
         const dbMsgs = (data.messages ?? []) as { id: string; role: string; content: string; read_at: string | null }[]
-        const visible = dbMsgs.filter((m) => m.role === "user" || m.role === "assistant" || m.role === "human")
+        const visible = dbMsgs.filter((m) =>
+          isSupport
+            ? m.role === "user" || m.role === "assistant" || m.role === "human"
+            : m.role === "user" || m.role === "human"
+        )
         const mapped = visible.map((m) => ({ id: m.id, role: m.role as Message["role"], content: m.content, read_at: m.read_at }))
         setMessages(isSupport ? [{ role: "assistant", content: GREETING }, ...mapped] : mapped)
-        if (visible.length > prevCountRef.current) {
-          const last = visible[visible.length - 1]
-          if (last?.role === "assistant" || last?.role === "human") {
-            setLoading(false)
-            setIsTyping(false)
-          }
-          prevCountRef.current = visible.length
+      })
+      .catch(() => { /* ignore */ })
+
+    // Realtime: subscribe to new messages broadcast
+    const channel = supabase
+      .channel(`conversation:${conversationId}`)
+      .on("broadcast", { event: "new_message" }, ({ payload }: { payload: { id: string; role: string; content: string; read_at: string | null } }) => {
+        const allowedRoles = isSupport ? ["user", "assistant", "human"] : ["user", "human"]
+        if (!payload || !allowedRoles.includes(payload.role)) return
+        const msg: Message = { id: payload.id, role: payload.role as Message["role"], content: payload.content, read_at: payload.read_at }
+        setMessages((prev) => {
+          if (prev.find((m) => m.id === msg.id)) return prev
+          return [...prev, msg]
+        })
+        if (msg.role === "assistant" || msg.role === "human") {
+          setLoading(false)
+          setIsTyping(false)
         }
-      } catch { /* ignore */ }
-    }
-    return () => { es.close(); esRef.current = null }
+      })
+      .subscribe()
+
+    return () => { supabase.removeChannel(channel) }
   }, [conversationId])
 
   useEffect(() => {
@@ -244,7 +257,7 @@ export function SupportChat({ onClose, conversationId: initialConversationId, ti
           method: "PATCH",
           headers: { "content-type": "application/json" },
           body: JSON.stringify({ conversationId }),
-        }).catch(() => { /* ignore */ })
+        }).catch(() => {/* ignore */})
       }
     })
   }, [messages, conversationId])
@@ -304,7 +317,7 @@ export function SupportChat({ onClose, conversationId: initialConversationId, ti
         {messages.map((msg, i) => (
           <div key={i} className={`flex flex-col ${msg.role === "user" ? "items-end" : "items-start"}`}>
             {msg.role === "human" && (
-              <span className="text-xs text-blue-500 font-medium mb-1 px-1">Support Agent</span>
+              <span className="text-xs text-blue-500 font-medium mb-1 px-1">{senderLabel ?? title ?? "Support Agent"}</span>
             )}
             <div className={`max-w-[80%] px-4 py-2.5 rounded-2xl text-sm leading-relaxed ${
               msg.role === "user"
@@ -334,8 +347,7 @@ export function SupportChat({ onClose, conversationId: initialConversationId, ti
         <div ref={bottomRef} />
       </div>
 
-      {!readonly && (
-        <div className="px-3 py-3 border-t border-gray-100 bg-white shrink-0">
+      <div className="px-3 py-3 border-t border-gray-100 bg-white shrink-0">
           <div className="flex gap-2 items-center">
             <input
               className="flex-1 px-4 py-2 rounded-full border border-gray-200 bg-gray-50 text-sm text-gray-900 outline-none focus:border-black focus:bg-white transition-colors placeholder:text-gray-400"
@@ -356,7 +368,6 @@ export function SupportChat({ onClose, conversationId: initialConversationId, ti
             </button>
           </div>
         </div>
-      )}
     </div>
   )
 }

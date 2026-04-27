@@ -443,7 +443,7 @@ The migration must be additive — nothing breaks while the new system rolls out
 | Prompt caching (Claude) | ~60% off LLM cost | The static sections of the system prompt (STATIC INSTRUCTIONS, DECISION RULES) never change between creators. Claude's prompt caching prices cached input tokens at ~$0.08/MTok vs $0.80/MTok — roughly 10× cheaper for the cacheable prefix. Brings Haiku cost to ~$7,000/month. |
 | Switch email provider at volume | ~80% off email cost | Resend is priced for low-to-mid volume. At 40M+ emails/month, AWS SES ($0.0001/email) or Postmark's bulk tier cuts the bill to ~$4,000–8,000/month. |
 | In-app only for `post.approved` | Already done | Eliminating email for the highest-volume event alone saves the most. |
-| Push instead of email for time-sensitive events | ~30% off remaining email | `warmup.reminder` and `viral.alert` are better as push notifications — cheaper and faster. Push via FCM/APNs costs ~$0.0005/notification. |
+| Push instead of email for time-sensitive events | ~30% off remaining email | `warmup.reminder` and `viral.alert` already land in the inbox (shipped). Adding push (FCM/APNs) as a second channel when a mobile app exists costs ~$0.0005/notification vs email. |
 
 **Optimised total: ~$18,000–25,000/month**
 

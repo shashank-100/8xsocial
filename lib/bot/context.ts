@@ -66,7 +66,7 @@ export async function getContext(creatorId: string, campaignId?: string | null):
     .eq("creator_id", creatorId)
     .eq("active", true)
 
-  const campaignIds = creatorCampaigns?.map((r) => r.campaign_id) ?? []
+  const campaignIds = [...new Set(creatorCampaigns?.map((r) => r.campaign_id) ?? [])]
 
   // Fall back to legacy single campaign_id if join table is empty
   if (campaignIds.length === 0 && creator.campaign_id) {

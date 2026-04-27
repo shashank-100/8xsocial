@@ -77,7 +77,7 @@ export async function POST(req: Request) {
   if (!conversation) return Response.json({ ok: true })
 
   // Save as "human" and write inbox_items row for creator's unified inbox
-  await saveHumanMessageWithInboxItem(conversation.id, conversation.creator_id, event.text, "8x Support")
+  await saveHumanMessageWithInboxItem(conversation.id, conversation.creator_id, event.text, "8x Support", "support")
   console.log("[slack] saved human message to conversation:", conversation.id)
 
   return Response.json({ ok: true })

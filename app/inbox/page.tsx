@@ -126,9 +126,9 @@ export default function InboxPage() {
         {!activeGroup ? (
           <EmptyState />
         ) : activeGroup.type === "support" || activeGroup.type === "chat" ? (
-          <SupportChat key={activeGroup.key} conversationId={activeGroup.item.thread_id ?? undefined} title={activeGroup.title} readonly={activeGroup.type === "chat"} />
+          <SupportChat key={activeGroup.key} conversationId={activeGroup.item.thread_id ?? undefined} title={activeGroup.title} senderLabel={activeGroup.type === "chat" ? activeGroup.title : undefined} onClose={() => setActiveGroup(null)} />
         ) : activeGroup.type === "system" || activeGroup.item.entity_type ? (
-          <DetailScreen item={activeGroup.item} />
+          <DetailScreen item={activeGroup.item} onBack={() => setActiveGroup(null)} />
         ) : (
           <EmptyState />
         )}

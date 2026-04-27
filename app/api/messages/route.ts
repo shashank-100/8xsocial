@@ -56,6 +56,17 @@ async function handleResult(
   await logResponse(creatorId, message, reply, result.intent === "ESCALATE")
 }
 
+// GET /api/messages?conversationId=...
+export async function GET(req: Request) {
+  const { searchParams } = new URL(req.url)
+  const conversationId = searchParams.get("conversationId")
+  if (!conversationId) return Response.json({ error: "conversationId required" }, { status: 400 })
+
+  const { getMessages } = await import("@/lib/bot/conversation")
+  const messages = await getMessages(conversationId)
+  return Response.json({ messages })
+}
+
 // POST /api/messages — store user message, trigger bot async
 export async function POST(req: Request) {
   const { creatorId, message, conversationId } = await req.json()
@@ -71,6 +82,11 @@ export async function POST(req: Request) {
   const userMsg = await saveMessage(conversation.id, "user", message)
 
   // 3. Process bot response AFTER response is sent (non-blocking)
+  // Skip bot entirely for human-to-human (brand chat) conversations
+  if (conversation.mode === "human") {
+    return Response.json({ message: userMsg })
+  }
+
   after(async () => {
     try {
       // If already escalated, forward creator message to Slack thread — don't call LLM
