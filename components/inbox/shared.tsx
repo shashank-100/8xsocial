@@ -227,6 +227,13 @@ export function SupportChat({ onClose, conversationId: initialConversationId, ti
         const msg: Message = { id: payload.id, role: payload.role as Message["role"], content: payload.content, read_at: payload.read_at }
         setMessages((prev) => {
           if (prev.find((m) => m.id === msg.id)) return prev
+          // Replace optimistic message (no id, same role+content) with the confirmed one
+          const optimisticIdx = prev.findIndex((m) => !m.id && m.role === msg.role && m.content === msg.content)
+          if (optimisticIdx !== -1) {
+            const next = [...prev]
+            next[optimisticIdx] = msg
+            return next
+          }
           return [...prev, msg]
         })
         if (msg.role === "assistant" || msg.role === "human") {

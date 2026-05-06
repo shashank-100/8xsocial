@@ -178,7 +178,7 @@ export async function POST(req: Request) {
 
         // Only ask "which campaign?" if the answer genuinely needs campaign-specific data
         if (result.intent === "DATA") {
-          const campaignList = campaigns.map((c) => c.brand_name).join(" or ")
+          const campaignList = [...new Set(campaigns.map((c) => c.brand_name))].join(" or ")
           const reply = `Hey! You're part of multiple campaigns — which one is this about? ${campaignList}?`
           await saveMessage(conversation.id, "assistant", reply)
           await logResponse(creatorId, message, reply, false)
