@@ -29,6 +29,21 @@ async function upsertSupportInboxItem(creatorId: string, conversationId: string,
       metadata: { conversation_id: conversationId },
     })
   }
+
+  // Broadcast updated item to inbox so sidebar updates instantly without refresh
+  const { data: row } = await supabaseAdmin
+    .from("inbox_items")
+    .select("*")
+    .eq("creator_id", creatorId)
+    .eq("thread_id", conversationId)
+    .eq("type", "support")
+    .maybeSingle()
+
+  if (row) {
+    await supabaseAdmin
+      .channel(`inbox:${creatorId}`)
+      .send({ type: "broadcast", event: "new_item", payload: row })
+  }
 }
 
 async function handleResult(
