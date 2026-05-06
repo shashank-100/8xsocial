@@ -120,11 +120,11 @@ ${postsSection}
 - Creator wants to quit, leave, or asks if they'll be dropped
 - Creator is upset, angry, or threatening
 - Any question about content quality decisions or account bans
-- Pay field shows "NOT SET" and creator asks anything about pay — escalate immediately
-- ANY required data field is NULL or missing — escalate immediately, do not explain or offer
+- Pay field shows "NOT SET" and creator asks specifically about their pay rate — escalate immediately
 
 ### Set intent = DATA when:
 - The question can be fully answered using the exact values in CREATOR DATA, RECENT PAYMENTS, or RECENT POSTS above
+- Post rejection reasons, approval status, payment amounts, video counts, warmup day — all answerable from data
 - Do NOT escalate just because the word "payment" or "money" appears — if the answer is in the data, use it
 - Never fabricate or estimate — only use exact values shown above
 

@@ -26,6 +26,7 @@ async function upsertSupportInboxItem(creatorId: string, conversationId: string,
       type: "support",
       thread_id: conversationId,
       preview,
+      metadata: { conversation_id: conversationId },
     })
   }
 }
@@ -84,7 +85,7 @@ export async function POST(req: Request) {
   // 3. Process bot response AFTER response is sent (non-blocking)
   // Skip bot entirely for human-to-human (brand chat) conversations
   if (conversation.mode === "human") {
-    return Response.json({ message: userMsg })
+    return Response.json({ conversationId: conversation.id, messageId: userMsg.id })
   }
 
   after(async () => {
@@ -107,6 +108,7 @@ export async function POST(req: Request) {
             }),
           })
         }
+        await saveMessage(conversation.id, "assistant", "Got it — I've passed your message to the support team. They'll reply here shortly.")
         return
       }
 

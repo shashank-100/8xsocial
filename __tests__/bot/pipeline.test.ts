@@ -1,5 +1,12 @@
 import { describe, it, expect, vi, beforeEach } from "vitest"
 
+const mockChain = { select: vi.fn(), eq: vi.fn(), update: vi.fn(), insert: vi.fn(), maybeSingle: vi.fn() }
+Object.values(mockChain).forEach(fn => (fn as ReturnType<typeof vi.fn>).mockReturnValue(mockChain))
+mockChain.maybeSingle.mockResolvedValue({ data: null, error: null })
+mockChain.insert.mockResolvedValue({ error: null })
+mockChain.update.mockResolvedValue({ error: null })
+vi.mock("@/lib/supabase/admin", () => ({ supabaseAdmin: { from: vi.fn(() => mockChain), channel: vi.fn(() => ({ send: vi.fn().mockResolvedValue({}) })) } }))
+
 // Flush all pending microtasks + macro-tasks so after() callbacks complete
 const flushPromises = () => new Promise(resolve => setTimeout(resolve, 0))
 

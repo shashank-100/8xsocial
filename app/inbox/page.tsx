@@ -18,6 +18,8 @@ export default function InboxPage() {
   const [unreadCount, setUnreadCount] = useState(0)
   const [loading, setLoading] = useState(true)
   const [activeGroup, setActiveGroup] = useState<ThreadGroup | null>(null)
+  const [supportOpen, setSupportOpen] = useState(false)
+  const [supportChatKey, setSupportChatKey] = useState(0)
   const supabase = createClient()
 
   const loadInbox = useCallback(async () => {
@@ -65,6 +67,7 @@ export default function InboxPage() {
 
   function handleGroupClick(group: ThreadGroup) {
     markRead(group.item)
+    setSupportOpen(false)
     setActiveGroup(group)
   }
 
@@ -83,13 +86,35 @@ export default function InboxPage() {
               <span className="text-gray-300">/</span>
               <h1 className="text-sm font-semibold text-gray-900">Inbox</h1>
             </div>
-            {unreadCount > 0 && (
-              <span className="text-xs font-semibold text-blue-500 bg-blue-50 px-2 py-0.5 rounded-full">
-                {unreadCount} unread
-              </span>
-            )}
+            <div className="flex items-center gap-2">
+              {unreadCount > 0 && (
+                <span className="text-xs font-semibold text-blue-500 bg-blue-50 px-2 py-0.5 rounded-full">
+                  {unreadCount} unread
+                </span>
+              )}
+              <button
+                onClick={() => { setActiveGroup(null); setSupportChatKey((k) => k + 1); setSupportOpen(true) }}
+                className="text-xs font-medium text-gray-500 hover:text-gray-900 bg-gray-100 hover:bg-gray-200 px-2.5 py-1 rounded-full transition-colors"
+              >
+                + New Chat
+              </button>
+            </div>
           </div>
         </div>
+
+        {/* 8x Support entry — always visible */}
+        <button
+          onClick={() => { setActiveGroup(null); setSupportOpen(true) }}
+          className={`w-full text-left px-4 py-3 flex items-center gap-3 border-b border-gray-100 transition-colors ${supportOpen && !activeGroup ? "bg-blue-50" : "hover:bg-gray-50"}`}
+        >
+          <div className="w-10 h-10 rounded-full bg-gray-900 text-white flex items-center justify-center shrink-0">
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M18.364 5.636l-3.536 3.536m0 5.656l3.536 3.536M9.172 9.172L5.636 5.636m3.536 9.192l-3.536 3.536M21 12a9 9 0 11-18 0 9 9 0 0118 0zm-5 0a4 4 0 11-8 0 4 4 0 018 0z" /></svg>
+          </div>
+          <div className="flex-1 min-w-0">
+            <p className="text-sm font-medium text-gray-700">8x Support</p>
+            <p className="text-xs text-gray-400 truncate mt-0.5">Ask about pay, posts, or your campaign</p>
+          </div>
+        </button>
 
         {/* Thread list */}
         <div className="flex-1 overflow-y-auto">
@@ -123,10 +148,14 @@ export default function InboxPage() {
 
       {/* ── Right panel ─────────────────────────────────────── */}
       <main className="flex-1 flex flex-col min-w-0">
-        {!activeGroup ? (
+        {supportOpen && !activeGroup ? (
+          <SupportChat key={`new-support-${supportChatKey}`} title="8x Support" onClose={() => setSupportOpen(false)} />
+        ) : !activeGroup ? (
           <EmptyState />
-        ) : activeGroup.type === "support" || activeGroup.type === "chat" ? (
-          <SupportChat key={activeGroup.key} conversationId={activeGroup.item.thread_id ?? undefined} title={activeGroup.title} senderLabel={activeGroup.type === "chat" ? activeGroup.title : undefined} onClose={() => setActiveGroup(null)} />
+        ) : activeGroup.type === "support" ? (
+          <SupportChat key={activeGroup.key} conversationId={activeGroup.item.thread_id ?? undefined} title="8x Support" onClose={() => { setActiveGroup(null); setSupportOpen(false) }} />
+        ) : activeGroup.type === "chat" ? (
+          <SupportChat key={activeGroup.key} conversationId={activeGroup.item.thread_id ?? undefined} title={activeGroup.title} senderLabel={activeGroup.title} onClose={() => setActiveGroup(null)} />
         ) : activeGroup.type === "system" || activeGroup.item.entity_type ? (
           <DetailScreen item={activeGroup.item} onBack={() => setActiveGroup(null)} />
         ) : (

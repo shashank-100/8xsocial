@@ -175,9 +175,10 @@ export function DigestCard({ item, active, onRead }: { item: InboxItem; active?:
   )
 }
 
+
 // ─── SupportChat ──────────────────────────────────────────────────────────────
 
-export function SupportChat({ onClose, conversationId: initialConversationId, title, senderLabel }: { onClose?: () => void; conversationId?: string; title?: string; senderLabel?: string }) {
+export function SupportChat({ onClose, conversationId: initialConversationId, title, senderLabel, onNewConversation }: { onClose?: () => void; conversationId?: string; title?: string; senderLabel?: string; onNewConversation?: (id: string, firstMessage: string) => void }) {
   const GREETING = "Hey! I'm 8x Support. Ask me anything about your campaign, pay, or posting schedule."
   const isSupport = !senderLabel
   const [messages, setMessages] = useState<Message[]>(isSupport ? [{ role: "assistant", content: GREETING }] : [])
@@ -187,6 +188,7 @@ export function SupportChat({ onClose, conversationId: initialConversationId, ti
   const [conversationId, setConversationId] = useState<string | null>(initialConversationId ?? null)
   const bottomRef = useRef<HTMLDivElement>(null)
   const typingTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const loadingTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const supabase = createClient()
 
   useEffect(() => {
@@ -197,7 +199,6 @@ export function SupportChat({ onClose, conversationId: initialConversationId, ti
   useEffect(() => {
     if (!conversationId) return
 
-    // Initial load
     fetch(`/api/messages?conversationId=${conversationId}`)
       .then((r) => r.json())
       .then((data) => {
@@ -209,10 +210,15 @@ export function SupportChat({ onClose, conversationId: initialConversationId, ti
         )
         const mapped = visible.map((m) => ({ id: m.id, role: m.role as Message["role"], content: m.content, read_at: m.read_at }))
         setMessages(isSupport ? [{ role: "assistant", content: GREETING }, ...mapped] : mapped)
+        // If bot already replied before we subscribed, stop loading
+        const last = visible[visible.length - 1]
+        if (last?.role === "assistant" || last?.role === "human") {
+          setLoading(false)
+          setIsTyping(false)
+        }
       })
-      .catch(() => { /* ignore */ })
+      .catch(() => {/* ignore */})
 
-    // Realtime: subscribe to new messages broadcast
     const channel = supabase
       .channel(`conversation:${conversationId}`)
       .on("broadcast", { event: "new_message" }, ({ payload }: { payload: { id: string; role: string; content: string; read_at: string | null } }) => {
@@ -226,6 +232,7 @@ export function SupportChat({ onClose, conversationId: initialConversationId, ti
         if (msg.role === "assistant" || msg.role === "human") {
           setLoading(false)
           setIsTyping(false)
+          if (loadingTimeoutRef.current) clearTimeout(loadingTimeoutRef.current)
         }
       })
       .subscribe()
@@ -267,6 +274,15 @@ export function SupportChat({ onClose, conversationId: initialConversationId, ti
     if (!text || loading) return
     setInput("")
     setLoading(true)
+    setMessages((prev) => [...prev, { role: "user", content: text }])
+
+    // Safety timeout — if no response in 15s, poll once and stop loading
+    if (loadingTimeoutRef.current) clearTimeout(loadingTimeoutRef.current)
+    loadingTimeoutRef.current = setTimeout(() => {
+      setLoading(false)
+      setIsTyping(false)
+    }, 15000)
+
     try {
       const res = await fetch("/api/messages", {
         method: "POST",
@@ -274,10 +290,14 @@ export function SupportChat({ onClose, conversationId: initialConversationId, ti
         body: JSON.stringify({ creatorId: CREATOR_ID, message: text, conversationId }),
       })
       const data = await res.json()
-      if (data.conversationId) setConversationId(data.conversationId)
+      if (data.conversationId) {
+        setConversationId(data.conversationId)
+        if (!conversationId) onNewConversation?.(data.conversationId, text)
+      }
     } catch {
       setMessages((prev) => [...prev, { role: "assistant", content: "Something went wrong. Please try again." }])
       setLoading(false)
+      if (loadingTimeoutRef.current) clearTimeout(loadingTimeoutRef.current)
     }
   }
 
@@ -348,26 +368,26 @@ export function SupportChat({ onClose, conversationId: initialConversationId, ti
       </div>
 
       <div className="px-3 py-3 border-t border-gray-100 bg-white shrink-0">
-          <div className="flex gap-2 items-center">
-            <input
-              className="flex-1 px-4 py-2 rounded-full border border-gray-200 bg-gray-50 text-sm text-gray-900 outline-none focus:border-black focus:bg-white transition-colors placeholder:text-gray-400"
-              placeholder="Ask me anything..."
-              value={input}
-              onChange={(e) => handleInputChange(e.target.value)}
-              onKeyDown={(e) => e.key === "Enter" && sendMessage()}
-              disabled={loading}
-            />
-            <button
-              onClick={sendMessage}
-              disabled={loading || !input.trim()}
-              className="w-9 h-9 rounded-full bg-black flex items-center justify-center disabled:opacity-30 shrink-0 hover:bg-gray-800 transition-colors"
-            >
-              <svg className="w-4 h-4 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 12h14M12 5l7 7-7 7" />
-              </svg>
-            </button>
-          </div>
+        <div className="flex gap-2 items-center">
+          <input
+            className="flex-1 px-4 py-2 rounded-full border border-gray-200 bg-gray-50 text-sm text-gray-900 outline-none focus:border-black focus:bg-white transition-colors placeholder:text-gray-400"
+            placeholder="Ask me anything..."
+            value={input}
+            onChange={(e) => handleInputChange(e.target.value)}
+            onKeyDown={(e) => e.key === "Enter" && sendMessage()}
+            disabled={loading}
+          />
+          <button
+            onClick={sendMessage}
+            disabled={loading || !input.trim()}
+            className="w-9 h-9 rounded-full bg-black flex items-center justify-center disabled:opacity-30 shrink-0 hover:bg-gray-800 transition-colors"
+          >
+            <svg className="w-4 h-4 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 12h14M12 5l7 7-7 7" />
+            </svg>
+          </button>
         </div>
+      </div>
     </div>
   )
 }
