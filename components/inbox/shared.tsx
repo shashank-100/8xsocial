@@ -280,15 +280,17 @@ export function SupportChat({ onClose, conversationId: initialConversationId, ti
     const text = input.trim()
     if (!text || loading) return
     setInput("")
-    setLoading(true)
+    if (isSupport) setLoading(true)
     setMessages((prev) => [...prev, { role: "user", content: text }])
 
-    // Safety timeout — if no response in 15s, poll once and stop loading
-    if (loadingTimeoutRef.current) clearTimeout(loadingTimeoutRef.current)
-    loadingTimeoutRef.current = setTimeout(() => {
-      setLoading(false)
-      setIsTyping(false)
-    }, 15000)
+    // Safety timeout — if no response in 15s, stop loading
+    if (isSupport) {
+      if (loadingTimeoutRef.current) clearTimeout(loadingTimeoutRef.current)
+      loadingTimeoutRef.current = setTimeout(() => {
+        setLoading(false)
+        setIsTyping(false)
+      }, 15000)
+    }
 
     try {
       const res = await fetch("/api/messages", {
@@ -301,6 +303,8 @@ export function SupportChat({ onClose, conversationId: initialConversationId, ti
         setConversationId(data.conversationId)
         if (!conversationId) onNewConversation?.(data.conversationId, text)
       }
+      // Brand chats have no bot — stop loading as soon as message is saved
+      if (!isSupport) setLoading(false)
     } catch {
       setMessages((prev) => [...prev, { role: "assistant", content: "Something went wrong. Please try again." }])
       setLoading(false)
