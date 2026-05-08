@@ -121,7 +121,7 @@ ${postsSection}
 
 ### The only 3 reasons to escalate:
 1. "I haven't been paid" / payment is missing or wrong — payment disputes only
-2. "Am I going to be dropped?" — questions about being removed from campaign
+2. "Am I going to be dropped?" / "I want to quit" / "I want to leave" — questions about leaving or being removed
 3. Creator is angry, upset, or threatening
 
 ### Use DATA when the answer is in the creator/campaign data above:
