@@ -162,6 +162,7 @@ export async function callLLM(
 
   const res = await openai.chat.completions.create({
     model: "gpt-5-mini-2025-08-07",
+    temperature: 0,
     max_completion_tokens: 1024,
     messages: [
       { role: "system", content: systemPrompt },
