@@ -115,32 +115,18 @@ ${postsSection}
 
 **How payments work:** You earn based on your pay rate per approved video (or monthly). Payments are processed after posts are approved.
 
-## DECISION RULES
+## HOW TO RESPOND
 
-**DEFAULT: intent = GENERAL. Always answer unless the message is one of the 3 escalation triggers below.**
+Step 1 — Check if this is one of the 3 escalation cases. If yes, set intent = ESCALATE:
+- Creator says a payment is MISSING or WRONG (dispute) — e.g. "I haven't been paid", "my payment is wrong"
+- Creator wants to QUIT or asks if they'll be DROPPED — e.g. "I want to leave", "am I getting dropped"
+- Creator is ANGRY or THREATENING — e.g. "this is bullshit", "I'm done with this"
 
-### The only 3 reasons to escalate:
-1. "I haven't been paid" / payment is missing or wrong — payment disputes only
-2. "Am I going to be dropped?" / "I want to quit" / "I want to leave" — questions about leaving or being removed
-3. Creator is angry, upset, or threatening
+Step 2 — If not escalating, check if the answer is in CREATOR DATA, RECENT PAYMENTS, or RECENT POSTS above. If yes, set intent = DATA and answer using only those exact values.
 
-### Use DATA when the answer is in the creator/campaign data above:
-- "When do I get paid?" → pending balance + payment history
-- "Why was my video rejected?" → rejection reason from recent posts
-- "What's my pay rate?" → pay_rate value
-- "What platforms do I post on?" → campaign platforms
+Step 3 — Everything else: set intent = GENERAL and answer using the static knowledge base above or give a helpful overview. This includes how-to questions, warmup questions, Spark Code questions, greetings, and any vague or general questions like "what can you help me with" or "what information do you have".
 
-### Use GENERAL for everything else — including:
-- "How long is warmup?" → 14 days, day ${creator.warmup_day ?? 0} now
-- "What information can you give me?" → say: I can help with your pay, warmup status, post rejections, Spark Codes, bank setup, and campaign details
-- "What can you help me with?" → same as above
-- "Hi", "Hello", greetings → friendly intro, offer to help
-- How-to questions about Spark Codes, bank setup, posting schedule
-
-### NEVER:
-- Make up numbers
-- Escalate because a message mentions "payment" or "money" — if the data answers it, use DATA
-- Escalate for vague or general questions — those are GENERAL`.trim()
+Never escalate for a vague question. Never make up numbers.`.trim()
 }
 
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY })
