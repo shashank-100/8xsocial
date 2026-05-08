@@ -35,17 +35,15 @@ export async function getContext(creatorId: string, campaignId?: string | null):
   creator: any; campaign: any; campaigns: any; noCampaign?: boolean;
   recentPayments: any[]; recentPosts: any[]; pendingBalance: number
 }> {
-  const { data: creator, error: creatorError } = await supabaseAdmin
-    .from("creators")
-    .select("*")
-    .eq("id", creatorId)
-    .single()
+  const [{ data: creator, error: creatorError }, extras, creatorCampaignsRes] = await Promise.all([
+    supabaseAdmin.from("creators").select("*").eq("id", creatorId).single(),
+    fetchPaymentsAndPosts(creatorId),
+    supabaseAdmin.from("creator_campaigns").select("campaign_id").eq("creator_id", creatorId).eq("active", true),
+  ])
 
   if (creatorError || !creator) {
     throw new Error(`Creator not found: ${creatorId}`)
   }
-
-  const extras = await fetchPaymentsAndPosts(creatorId)
 
   // If conversation is already pinned to a campaign, use that
   if (campaignId) {
@@ -60,11 +58,7 @@ export async function getContext(creatorId: string, campaignId?: string | null):
   }
 
   // Check creator_campaigns join table for multiple active campaigns
-  const { data: creatorCampaigns } = await supabaseAdmin
-    .from("creator_campaigns")
-    .select("campaign_id")
-    .eq("creator_id", creatorId)
-    .eq("active", true)
+  const { data: creatorCampaigns } = creatorCampaignsRes
 
   const campaignIds = [...new Set(creatorCampaigns?.map((r) => r.campaign_id) ?? [])]
 
