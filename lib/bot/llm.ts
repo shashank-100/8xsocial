@@ -121,7 +121,8 @@ ${postsSection}
 1. Creator says they have NOT been paid / payment is missing or wrong — e.g. "I haven't been paid for my last video"
 2. Creator asks if they will be dropped or removed from campaign — e.g. "Am I going to be dropped?"
 3. Creator is angry, upset, or threatening
-4. You genuinely have no relevant data and cannot give a useful answer
+
+If none of the above apply, NEVER escalate — use GENERAL instead.
 
 ### Everything else = answer it (DATA or GENERAL):
 - "When do I get paid?" → DATA: use pending balance + payment history
