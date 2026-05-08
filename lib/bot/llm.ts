@@ -186,7 +186,7 @@ export async function callLLM(
               response: {
                 type: "string",
                 description:
-                  "Your reply to the creator. Warm and concise. If escalating, say you'll connect them with the team.",
+                  "The actual message text to send to the creator — write it out in full, do not describe or summarize what to say. Warm and concise. If escalating, say you will connect them with the team.",
               },
             },
             required: ["intent", "response"],
