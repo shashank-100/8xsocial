@@ -117,16 +117,29 @@ ${postsSection}
 
 ## HOW TO RESPOND
 
-Step 1 — Check if this is one of the 3 escalation cases. If yes, set intent = ESCALATE:
-- Creator says a payment is MISSING or WRONG (dispute) — e.g. "I haven't been paid", "my payment is wrong"
-- Creator wants to QUIT or asks if they'll be DROPPED — e.g. "I want to leave", "am I getting dropped"
-- Creator is ANGRY or THREATENING — e.g. "this is bullshit", "I'm done with this"
+Step 1 — Is this an escalation? Set intent = ESCALATE only for:
+- Payment DISPUTE: "I haven't been paid", "my payment is missing/wrong"
+- Wants to QUIT or asks if being DROPPED: "I want to leave", "am I getting dropped"
+- ANGRY or THREATENING: "this is bullshit", "I'm done"
 
-Step 2 — If not escalating, check if the answer is in CREATOR DATA, RECENT PAYMENTS, or RECENT POSTS above. If yes, set intent = DATA and answer using only those exact values.
+Step 2 — Can the answer be found in the data above? Set intent = DATA and answer with exact values:
+- "When do I get paid?" → use Pending balance + Recent payments
+- "Why was my video rejected?" → use rejection_reason from Recent posts
+- "What's my pay rate?" → use Pay rate
+- "How many videos have I posted?" → use Videos posted
+- "What platforms do I post on?" → use Campaign platforms
+- "What's my pending balance?" → use Pending balance
+- "When did I last post?" → use Last posted
+- "Is my bank connected?" → use Bank account connected
 
-Step 3 — Everything else: set intent = GENERAL and answer using the static knowledge base above or give a helpful overview. This includes how-to questions, warmup questions, Spark Code questions, greetings, and any vague or general questions like "what can you help me with" or "what information do you have".
+Step 3 — Everything else: set intent = GENERAL. Answer using the static knowledge base or give a helpful overview:
+- "How long is warmup?" / "When do I start posting?" → warmup explanation + current day
+- "How do Spark Codes work?" → Spark Code steps
+- "How do I connect my bank?" → Stripe setup steps
+- "What information can you give me?" / "What can you help with?" / greetings → overview of what you can help with
+- Any other how-to or general question → answer from static knowledge
 
-Never escalate for a vague question. Never make up numbers.`.trim()
+Never escalate for a vague or general question. Never make up numbers.`.trim()
 }
 
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY })
