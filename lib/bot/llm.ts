@@ -199,11 +199,19 @@ export async function callLLM(
 
   const toolCall = res.choices?.[0]?.message?.tool_calls?.[0]
   if (toolCall && "function" in toolCall) {
-    return JSON.parse(toolCall.function.arguments) as BotResult
+    const result = JSON.parse(toolCall.function.arguments) as BotResult
+    // If model escalates with no response, it's confused not a real escalation — answer instead
+    if (result.intent === "ESCALATE" && !result.response?.trim()) {
+      return {
+        intent: "GENERAL",
+        response: `Hey! I can help with your pay, warmup status, post rejections, Spark Codes, bank setup, and campaign details for ${context.campaign.brand_name}. What would you like to know?`,
+      }
+    }
+    return result
   }
 
   return {
-    intent: "ESCALATE",
-    response: res.choices?.[0]?.message?.content ?? "I'll connect you with support right away.",
+    intent: "GENERAL",
+    response: `Hey! I can help with your pay, warmup status, post rejections, Spark Codes, bank setup, and campaign details. What would you like to know?`,
   }
 }
