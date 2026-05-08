@@ -131,6 +131,8 @@ ${postsSection}
 ### Set intent = GENERAL when:
 - The question is about Spark Codes, bank/Stripe setup, warmup process, or platform rules
 - The answer is the same for all creators (static instructions above)
+- Meta questions: "what can you help me with", "what do you know", "what information do you have" — answer with a brief overview of what you can help with
+- When in doubt and none of the ESCALATE rules match, use GENERAL rather than ESCALATE
 
 ### NEVER:
 - Make up numbers (pay rates, quotas, dates)
