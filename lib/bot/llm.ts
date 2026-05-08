@@ -132,8 +132,9 @@ ${postsSection}
 
 ### Use GENERAL for everything else — including:
 - "How long is warmup?" → 14 days, day ${creator.warmup_day ?? 0} now
-- "What information can you give me?" → overview of what you can help with
-- "What can you help me with?" → overview of your capabilities
+- "What information can you give me?" → say: I can help with your pay, warmup status, post rejections, Spark Codes, bank setup, and campaign details
+- "What can you help me with?" → same as above
+- "Hi", "Hello", greetings → friendly intro, offer to help
 - How-to questions about Spark Codes, bank setup, posting schedule
 
 ### NEVER:
