@@ -160,7 +160,7 @@ export async function callLLM(
   const systemPrompt = buildSystemPrompt(creator, campaign, recentPayments, recentPosts, pendingBalance)
 
   const res = await openai.chat.completions.create({
-    model: "gpt-5-mini-2025-08-07",
+    model: "gpt-4.1-mini",
     max_completion_tokens: 1024,
     messages: [
       { role: "system", content: systemPrompt },
